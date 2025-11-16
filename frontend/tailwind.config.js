@@ -26,6 +26,8 @@ module.exports = {
             elegant: ['Playfair Display', 'Cormorant Garamond', 'Georgia', 'serif'],
             condensed: ['Roboto Condensed', 'Oswald', 'Arial Narrow', 'sans-serif-condensed'],
             code: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', 'Monaco', 'Consolas', 'monospace'],
+            'exo-2': ['"Exo 2"', ...defaultTheme.fontFamily.sans],
+            orbitron: ['"Orbitron"', ...defaultTheme.fontFamily.sans],
         },
 
         extend: {
@@ -61,7 +63,7 @@ module.exports = {
                 "neo-dark": "#0a0a1a",
                 "neo-darker": "#050510",
                 "neo-text": "#e0e0ff",
-                "neo-text-dim": "#a0a0c0",
+                "neo-dim": "#a0a0c0",
 
                 primary: {
                     50: '#5252ff',
@@ -167,7 +169,8 @@ module.exports = {
             'spin': 'spin 1s linear infinite',
             'reload-100': 'spin 1s linear infinite',
             'spin-200': 'spin 2s linear infinite',
-            'fadeIn': 'fadeIn 2s cubic-bezier(0.25, 1, 0.5, 1)'
+            'fadeIn': 'fadeIn 2s cubic-bezier(0.25, 1, 0.5, 1)',
+            'blink': 'blink 1.5s infinite ease-in-out',
         },
 
         keyframes: {
@@ -203,11 +206,11 @@ module.exports = {
                 '0%': { transform: 'rotate(0deg)' },
                 '100%': { transform: 'rotate(360deg)' },
             },
+            '0%': { opacity: 1 },
+            '100%': { opacity: 1 },
+            '50%': { opacity: 0.5 },
         },
-        /*gradientColorStops: {
-         *          'gradient-primary': '#00b4d8',
-         *          'gradient-secondary': '#00ffcc',
-    },*/
+
     },
     plugins: [
         function({ addComponents }) {
@@ -260,7 +263,7 @@ module.exports = {
     variants: {
         extend: {
             // enable the variants
-            backgroundColor: ['before', 'after', 'hover::before'],
+            backgroundColor: ['before', 'after', 'hover::before', 'last-child'],
             textColor: ['before', 'after'],
         },
     }
