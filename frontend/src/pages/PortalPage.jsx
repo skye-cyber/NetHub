@@ -44,42 +44,99 @@ const PortalPage = () => {
 
     return (
         <Container maxWidth="sm">
-            <Paper elevation={3} sx={{ p: 4, mt: 8 }}>
-                <Typography variant="h4" component="h1" gutterBottom align="center">
-                    Network Hub Portal
-                </Typography>
+            <title>NeoPortal Access</title>
 
-                {error && (
-                    <Alert severity="error" sx={{ mb: 2 }}>
-                        {error}
-                    </Alert>
-                )}
+            <div className="bg-matrix fixed top-0 left-0 size-full opacity-10 z-[-1]"></div>
 
-                <Typography variant="body1" gutterBottom>
-                    Your IP: {clientInfo.ip}
-                </Typography>
-                <Typography variant="body1" gutterBottom>
-                    Your MAC: {clientInfo.mac}
-                </Typography>
+            <div className="flex items-center justify-center min-h-[100vh] p-6">
+                <div className="relative hidden bg-[rgba(10, 10, 26, 0.8)] backdrop-blur-sm border border-[rgba(0, 240, 255, 0.2)] rounded-md p-8 w-full max-w-lg shadow-[0_0_100px_rgba(0,240,255,0.1),_inset_0_1px_0_rgba(255,255,255,0.1)] before:content-[''] before:absolute before:top-0 before:left-0 before:h-1 before:bg-[linear-gradient(90deg, transparent, var(--primary), transparent)]">
+                    {/* Header */}
+                    <div className="header">
+                        <div className="logo">
+                            <div className="logo-icon">⚡</div>
+                            <h1>NEO<span>PORTAL</span></h1>
+                        </div>
+                        <div className="network-status">
+                            <div className="status-indicator"></div>
+                            <span>NETWORK READY</span>
+                        </div>
+                    </div>
 
-                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        size="large"
-                        onClick={handleConnect}
-                        disabled={loading}
-                    >
-                        {loading ? <CircularProgress size={24} /> : 'Connect to Network'}
-                    </Button>
-                </Box>
+                    {/* Welcome Section */}
+                    <div className="welcome-section">
+                        <h2>QUANTUM NETWORK ACCESS</h2>
+                        <p>
+                            You've entered the secure gateway. Accept terms to proceed with full
+                            bandwidth access.
+                        </p>
+                    </div>
 
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, textAlign: 'center' }}>
-                    {process.env.NODE_ENV === 'development' ?
-                        'Development mode - some features may be simulated' :
-                        '© Network Hub'}
-                </Typography>
-            </Paper>
+                    {/* Device Info */}
+                    <div className="device-info">
+                        <div className="info-grid">
+                            <div className="info-item">
+                                <label>DEVICE ID</label>
+                                <div className="value">{clientInfo?.mac}</div>
+                            </div>
+                            <div className="info-item">
+                                <label>IP VECTOR</label>
+                                <div className="value">{clientInfo?.ip}</div>
+                            </div>
+                            <div className="info-item">
+                                <label>CONNECTION</label>
+                                <div className="value">ENCRYPTED</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Terms */}
+                    <div className="terms-section">
+                        <h3>ACCESS PROTOCOL</h3>
+                        <div className="terms-content">
+                            <div className="term-item">
+                                <div className="term-check">✓</div>
+                                <span>I agree to use this network responsibly and ethically</span>
+                            </div>
+                            <div className="term-item">
+                                <div className="term-check">✓</div>
+                                <span
+                                >I understand network usage may be monitored for security</span
+                                >
+                            </div>
+                            <div className="term-item">
+                                <div className="term-check">✓</div>
+                                <span>I will not engage in malicious activities</span>
+                            </div>
+                            <div className="term-item">
+                                <div className="term-check">✓</div>
+                                <span>I accept the bandwidth and usage policies</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Connect Button */}
+                    <div className="action-section">
+                        <button id="connectBtn" className="connect-button">
+                            <span className="btn-text">INITIATE CONNECTION</span>
+                            <div className="btn-loader">
+                                <div className="loader-dot"></div>
+                                <div className="loader-dot"></div>
+                                <div className="loader-dot"></div>
+                            </div>
+                        </button>
+                        <div id="message" className="message"></div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="footer">
+                        <div className="security-badge">
+                            <span>🔒 QUANTUM ENCRYPTED</span>
+                        </div>
+                        <div className="version">v0.1.1 • NEO NETWORKS</div>
+                    </div>
+                </div>
+            </div>
+
         </Container>
     );
 };

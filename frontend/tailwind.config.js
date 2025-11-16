@@ -54,6 +54,15 @@ module.exports = {
                 'message-hover': '0 4px 16px rgba(0, 0, 0, 0.12)',
             },
             colors: {
+                "neo-primary": "#00f0ff",
+                "neo-primary-glow": "#00f0ff80",
+                "neo-secondary": "#7b42f6",
+                "neo-accent": "#b44cff",
+                "neo-dark": "#0a0a1a",
+                "neo-darker": "#050510",
+                "neo-text": "#e0e0ff",
+                "neo-text-dim": "#a0a0c0",
+
                 primary: {
                     50: '#5252ff',
                     100: '#4c4ceb',
@@ -67,7 +76,7 @@ module.exports = {
                     900: '#0d0d27',
                     950: '#070716',
                 },
-                secondary:{
+                secondary: {
                     50: '#6d98fd',
                     100: '#618ae2',
                     200: '#5174be',
@@ -80,7 +89,7 @@ module.exports = {
                     900: '#0f1422',
                     950: '#06080d',
                 },
-                accent:{
+                accent: {
                     50: '#83b4fd',
                     100: '#78a5e8',
                     200: '#729cdc',
@@ -220,8 +229,39 @@ module.exports = {
                     linear-gradient(to bottom right, hsl(0, 0%, 15%, 0.9), hsl(0, 0%, 15%, 0.9)),
                           linear-gradient(135deg, rgba(255, 0, 255, 0.67) 0%, rgba(0, 0, 255, 0.6) 50%, rgba(0, 255, 255, 0.8) 100%)
                           `,
+                },
+                '.matrix': {
+                    background: `radial-gradient(
+                        circle at 20% 80%,
+                        var(--secondary) 0%,
+                        transparent 50%
+                    ),
+                    radial-gradient(
+                        circle at 80% 20%,
+                        var(--accent) 0%,
+                        transparent 50%
+                    ),
+                    radial-gradient(
+                        circle at 40% 40%,
+                        var(--primary) 0%,
+                        transparent 50%
+                    )`
                 }
             })
         },
+        require('tailwindcss-pseudo-elements')({
+            // optional customization
+            customPseudoClasses: [],
+            customPseudoElements: ['before', 'after'],
+            contentUtilities: true,
+            emptyContent: true
+        }),
     ],
+    variants: {
+        extend: {
+            // enable the variants
+            backgroundColor: ['before', 'after', 'hover::before'],
+            textColor: ['before', 'after'],
+        },
+    }
 };
