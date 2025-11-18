@@ -12,6 +12,7 @@ import ConnectionStatus from './components/ConnectionStatus';
 import Navigation from './components/Navigation/navigation';
 import DevicePage from './pages/DevicesPage'
 import DiscoverPage from './pages/DiscoverPage';
+import SettingsPage from './pages/SettingsPage';
 
 const theme = createTheme({
     palette: {
@@ -40,7 +41,7 @@ const App = () => {
                             <Route path="/networks" element={<AdminPage />} />
                             <Route path="/captive" element={<CaptivePage />} />
                             <Route path="/devices" element={<DevicePage />} />
-                            <Route path="/settings" element={<AdminPage />} />
+                            <Route path="/settings" element={<SettingsPage />} />
                             <Route path="/discover" element={<DiscoverPage />} />
                         </Routes>
                     </Router>

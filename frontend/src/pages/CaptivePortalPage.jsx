@@ -1,23 +1,30 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { connectToNetwork } from '../services/api';
-//import '../components/CaptivePortal';
+import { connectToNetwork, deviceInfor } from '../services/api';
 
 const CaptivePage = () => {
-    const [clientInfo, setClientInfo] = useState({ ip: '192.168.x.x', mac: '00:00:00:00:00:00' });
+    const [clientInfo, setClientInfo] = useState({ ip: localStorage.getItem('client_ip'), mac: localStorage.getItem('client_mac') });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const navigate = useNavigate();
     const [messageType, setMessageType] = useState('')
-    const particle_colors = ["bg-yellow-400", "bg-green-400", "bg-neo-primary", "bg-sky-200", "bg-fuchsia-300"]
+    const particle_colors = ["bg-yellow-500 dark:bg-yellow-400 ", "bg-green-600 dark:bg-green-400", "bg-cyan-600 dark:bg-neo-primary", "dark:bg-sky-200", "bg-fuchsia-600 dark:bg-fuchsia-300"]
 
     // Simulate getting client info if backend is unavailable
     useEffect(() => {
-        // This would normally come from backend, but we have fallbacks
-        const simulatedIp = localStorage.getItem('client_ip') || '192.168.12.1';
-        const simulatedMac = localStorage.getItem('client_mac') || '00:00:00:00:00:00';
-        setClientInfo({ ip: simulatedIp, mac: simulatedMac });
+        if (!clientInfo.ip) {
+            const fetchdata = async () => {
+                const response = await deviceInfor()
+                if (response.status === 200) {
+                    setClientInfo(response.data)
+
+                    localStorage.setItem('client_ip', response?.data.client_ip)
+                    localStorage.setItem('client_mac', response?.data.client_mac)
+                }
+            }
+            fetchdata()
+        }
         addFloatingParticles()
     }, []);
 
@@ -27,7 +34,7 @@ const CaptivePage = () => {
             const particle = document.createElement('div')
             const bg_color = particle_colors[(Math.random() + 1 * 10).toFixed(0)] || particle_colors[2]
 
-            particle.className = `absolute z-[20] w-1 h-1 ${bg_color} rounded-full pointer-events-none brightness-100`
+            particle.className = `absolute z-[20] w-1 h-1 ${bg_color} rounded-full pointer-events-none dark:brightness-100`
             particle.style.cssText = `
             opacity: ${Math.random() * 0.3};
             animation: float ${5 + Math.random() * 10}s linear infinite;
@@ -63,7 +70,8 @@ const CaptivePage = () => {
 
         try {
             const response = await connectToNetwork();
-            if (response.data.status === 'success') {
+            console.log(response)
+            if (response.data.status === '200') {
                 navigate(response.data.redirect_url);
                 showMessage("Connection successfull", "success")
             } else {
