@@ -16,13 +16,14 @@ import ThemeToggle from '../Themes/useTheme';
 const Navigation = () => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const location = useLocation(); // Get current route
+    const [freemode, setFreemode] = useState(false);
 
     const navigation = [
         { name: 'Dashboard', path: '/dashboard', icon: ChartBarIcon },
         { name: 'Networks', path: '/networks', icon: WifiIcon },
         { name: 'Discover', path: '/discover', icon: UserGroupIcon },
         { name: 'Admin', path: '/admin', icon: ShieldCheckIcon },
-        { name: 'Captive', path: '/captive', icon: LockClosedIcon },
+        { name: 'Captive', path: freemode ? '/captive' : 'payment', icon: LockClosedIcon },
         { name: 'Devices', path: '/devices', icon: DevicePhoneMobileIcon },
         { name: 'Settings', path: '/settings', icon: CogIcon },
     ];
