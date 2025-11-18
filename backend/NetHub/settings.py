@@ -19,6 +19,10 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 # Application definition
 
+CAPTIVE_NETWORK = "192.168.12.0/24"
+
+FRONTEND_BASE_URL = "http://localhost:40099"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -32,6 +36,8 @@ INSTALLED_APPS = [
     "devices",
     "payments",
     "corsheaders",
+    'users',
+    'management',
 ]
 
 MIDDLEWARE = [
@@ -65,6 +71,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "NetHub.wsgi.application"
 
+AUTH_USER_MODEL = "users.user"
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
