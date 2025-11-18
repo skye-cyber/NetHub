@@ -11,13 +11,13 @@ interface Device {
 */
 
 const AdminPage = () => {
-    const [devices, setDevices] = useState([]);
+    const [devices, setDevices] = useState([{ mac: "00:00:00:00", ip: "192.168.234.34", authenticated: false, auth: "Blocked" }]);
 
     useEffect(() => {
         const fetchDevices = async () => {
             try {
                 const response = await axios.get('/status');
-                setDevices(response.data.connected_devices);
+                //setDevices(response.data.connected_devices);
             } catch (error) {
                 console.error('Error fetching devices:', error);
             }
@@ -49,55 +49,22 @@ const AdminPage = () => {
     };
 
     return (
-        <Container maxWidth="lg">
-            <Paper elevation={3} sx={{ p: 4, mt: 8 }}>
-                <Typography variant="h4" component="h1" gutterBottom align="center">
-                    Network Hub Admin Panel
-                </Typography>
-                <TableContainer component={Paper} sx={{ mt: 4 }}>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>MAC Address</TableCell>
-                                <TableCell>IP Address</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {devices.map((device) => (
-                                <TableRow key={device.mac}>
-                                    <TableCell>{device.mac}</TableCell>
-                                    <TableCell>{device.ip}</TableCell>
-                                    <TableCell>
-                                        {device.authenticated ? 'Authenticated' : 'Blocked'}
-                                    </TableCell>
-                                    <TableCell>
-                                        {device.authenticated ? (
-                                            <Button
-                                                variant="contained"
-                                                color="error"
-                                                onClick={() => handleRevokeAccess(device.mac)}
-                                            >
-                                                Revoke Access
-                                            </Button>
-                                        ) : (
-                                            <Button
-                                                variant="contained"
-                                                color="success"
-                                                onClick={() => handleGrantAccess(device.mac)}
-                                            >
-                                                Grant Access
-                                            </Button>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            </Paper>
-        </Container>
+        <>
+            <title>Admin</title>
+            <Container className='w-full max-w-full' maxWidth="lg">
+            {/* TODO: add dark mode support with elegant appearnce on both themes
+                implement registration of new networks:
+                1. existing networks
+                2. create new network eg hostpot
+                user management
+                user priviledge management(use least priviledge)
+                generation of direct access codes,
+                devices history etc
+                ...other network administrative tasks
+                */
+            }
+            </Container>
+        </>
     );
 };
 
