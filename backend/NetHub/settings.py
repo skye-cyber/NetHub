@@ -71,7 +71,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "NetHub.wsgi.application"
 
-AUTH_USER_MODEL = "users.user"
+AUTH_USER_MODEL = "users.UserProfile"
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases

@@ -13,6 +13,7 @@ import Navigation from './components/Navigation/navigation';
 import DevicePage from './pages/DevicesPage'
 import DiscoverPage from './pages/DiscoverPage';
 import SettingsPage from './pages/SettingsPage';
+import PaymentPage from './pages/Payments';
 
 const theme = createTheme({
     palette: {
@@ -43,6 +44,7 @@ const App = () => {
                             <Route path="/devices" element={<DevicePage />} />
                             <Route path="/settings" element={<SettingsPage />} />
                             <Route path="/discover" element={<DiscoverPage />} />
+                            <Route path="/payment" element={<PaymentPage />} />
                         </Routes>
                     </Router>
                 </ThemeProvider>

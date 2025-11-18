@@ -32,5 +32,9 @@ class CustomUserAdmin(User):
 
 
 # Re-register UserAdmin
-admin.site.unregister(User)
+try:
+    admin.site.unregister(User)
+except Exception:
+    pass
+
 admin.site.register(User)
