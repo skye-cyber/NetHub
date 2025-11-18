@@ -39,3 +39,6 @@ venv/
 *.mp3
 *.mp4
 *.swp
+migrations/
+*.sqlite3
+.env
