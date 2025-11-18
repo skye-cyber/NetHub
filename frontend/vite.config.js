@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
+
 export default defineConfig({
     plugins: [
         react()
@@ -22,10 +23,10 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': resolve(__dirname, 'src'),
-            crypto: require.resolve('crypto-browserify'),
-            process: require.resolve('process/browser'),
-            fs: require.resolve('browserify-fs'),
-            buffer: require.resolve('buffer/'),
+            crypto: resolve('crypto-browserify'),
+            process: resolve('process/browser'),
+            fs: resolve('browserify-fs'),
+            buffer: resolve('buffer/'),
         },
     },
     define: {

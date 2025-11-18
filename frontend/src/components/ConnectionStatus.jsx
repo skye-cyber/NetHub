@@ -2,14 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Snackbar, Alert } from '@mui/material';
 import { getStatus } from '../services/api';
 
-/*
-const Status = {
-    Online: 'online',
-    Offline: 'offline',
-    Unknown: 'unknown',
-}
-*/
-
 const ConnectionStatus = () => {
     const [open, setOpen] = useState(false);
     const [status, setStatus] = useState('unknown');
@@ -17,7 +9,7 @@ const ConnectionStatus = () => {
     useEffect(() => {
         const checkConnection = async () => {
             try {
-                await getStatus();
+                const status = await getStatus();
                 setStatus('online');
             } catch (error) {
                 console.log(error)

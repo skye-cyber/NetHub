@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+import { fontFamily } from 'tailwindcss/defaultTheme'
+
 module.exports = {
     darkMode: 'class', /*'[data-mode="dark"]'],*/
     content: ['./src/**/*.html', './src/**/*.jsx', './src/**/*.js'],
@@ -26,8 +28,8 @@ module.exports = {
             elegant: ['Playfair Display', 'Cormorant Garamond', 'Georgia', 'serif'],
             condensed: ['Roboto Condensed', 'Oswald', 'Arial Narrow', 'sans-serif-condensed'],
             code: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', 'Monaco', 'Consolas', 'monospace'],
-            'exo-2': ['"Exo 2"', ...defaultTheme.fontFamily.sans],
-            orbitron: ['"Orbitron"', ...defaultTheme.fontFamily.sans],
+            'exo-2': ['"Exo 2"', ...fontFamily.sans],
+            orbitron: ['"Orbitron"', ...fontFamily.sans],
         },
 
         extend: {
