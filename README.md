@@ -22,32 +22,42 @@ A comprehensive network management and sharing platform with captive portal func
 ## 🏗️ Project Structure
 
 ```
-nethub/
+NetHub/
 ├── frontend/                 # React Frontend
-│   ├── src/
-│   │   ├── components/       # Reusable components
-│   │   ├── pages/           # Main application pages
-│   │   ├── services/        # API integration
-│   │   └── styles/          # CSS and Tailwind config
-│   └── package.json
+│   ├── public
+├── src
+│    ├── components
+│    │   ├── Layout
+│    │   ├── Navigation
+│    │   └── Themes
+│    ├── pages
+│    ├── services
+│    └── styles
 │
 ├── backend/                  # Django Backend
-│   ├── nethub/
-│   │   ├── models.py        # Database models
-│   │   ├── views.py         # API views and business logic
-│   │   ├── admin.py         # Django admin configurations
-│   │   ├── urls.py          # URL routing
-│   │   └── settings.py      # Django settings
-│   └── requirements.txt
-│
-└── README.md
+│   ├── deviceauth
+│   ├── devices
+│   ├── managements logic
+│   ├── NetHubations
+│   ├── payments
+│   ├── portal
+│   ├── scripts
+│   ├── util
+│   ├── services
+│   ├── users
+│   ├── README.md
+│   └── requirements.txt 
+└──
 ```
+│
+│
+│
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ and npm
-- Python 3.8+
+- Node.js 20+ and npm
+- Python 3.11+
 - PostgreSQL/MySQL database
 - M-Pesa API credentials (for payment processing)
 
