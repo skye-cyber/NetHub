@@ -71,7 +71,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "NetHub.wsgi.application"
 
-AUTH_USER_MODEL = "users.UserProfile"
+AUTH_USER_MODEL = "users.CustomUser"
+
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "users.backends.EmailBackend",
+]
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
