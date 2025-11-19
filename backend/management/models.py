@@ -1,5 +1,6 @@
+from django.utils import timezone
 from django.db import models
-from django.conf import settings as system_settings
+from django.contrib.auth.models import User
 import uuid
 
 
@@ -8,10 +9,12 @@ class SystemSettings(models.Model):
         ('stripe', 'Stripe'),
         ('paypal', 'PayPal'),
         ('razorpay', 'Razorpay'),
+        ('mpesa', 'M-Pesa'),
         ('manual', 'Manual Payment'),
     ]
 
     CURRENCY_CHOICES = [
+        ('KSH', 'Kenya Shillings'),
         ('USD', 'US Dollar'),
         ('EUR', 'Euro'),
         ('GBP', 'British Pound'),
@@ -28,6 +31,7 @@ class SystemSettings(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # Network Settings
+    network = models.ForeignKey('portal.Network', on_delete=models.CASCADE, null=True)
     network_name = models.CharField(max_length=100, default="NetHub")
     max_devices_per_user = models.IntegerField(default=5)
     session_timeout = models.IntegerField(default=24)  # hours
@@ -37,8 +41,8 @@ class SystemSettings(models.Model):
     # Payment & Monetization
     free_internet_enabled = models.BooleanField(default=False)
     paid_mode_enabled = models.BooleanField(default=True)
-    payment_gateway = models.CharField(max_length=20, choices=PAYMENT_GATEWAY_CHOICES, default='stripe')
-    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='USD')
+    payment_gateway = models.CharField(max_length=20, choices=PAYMENT_GATEWAY_CHOICES, default='mpesa')
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='KSH')
     hourly_rate = models.DecimalField(max_digits=6, decimal_places=2, default=2.50)
     daily_rate = models.DecimalField(max_digits=6, decimal_places=2, default=15.00)
     monthly_rate = models.DecimalField(max_digits=6, decimal_places=2, default=99.00)
@@ -67,7 +71,7 @@ class SystemSettings(models.Model):
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    updated_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         db_table = 'system_settings'
@@ -92,7 +96,7 @@ class SystemSettings(models.Model):
 class SettingsHistory(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     settings = models.ForeignKey(SystemSettings, on_delete=models.CASCADE, related_name='history')
-    changed_by = models.ForeignKey(system_settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    changed_by = models.ForeignKey(User, on_delete=models.CASCADE)
     changes = models.JSONField()  # Store changed fields and values
     timestamp = models.DateTimeField(auto_now_add=True)
     reason = models.TextField(blank=True, null=True)
@@ -105,3 +109,37 @@ class SettingsHistory(models.Model):
 
     def __str__(self):
         return f"Settings change by {self.changed_by.email} at {self.timestamp}"
+
+
+class AccessCode(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('revoked', 'Revoked'),
+        ('expired', 'Expired'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=50, unique=True)
+    network = models.ForeignKey('networks.Network', on_delete=models.CASCADE, related_name='access_codes')
+    max_uses = models.IntegerField(default=10)
+    uses = models.IntegerField(default=0)
+    expires_at = models.DateTimeField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    description = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'access_codes'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.code} - {self.network.name}"
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_active(self):
+        return self.status == 'active' and not self.is_expired and self.uses < self.max_uses

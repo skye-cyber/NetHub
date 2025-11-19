@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import SystemSettings, SettingsHistory
+from .models import SystemSettings, SettingsHistory, AccessCode
 
 
 @admin.register(SystemSettings)
@@ -82,3 +82,16 @@ class SettingsHistoryAdmin(admin.ModelAdmin):
             return format_html(formatted)
         return '-'
     changes_formatted.short_description = 'Changes Details'
+
+
+@admin.register(AccessCode)
+class AccessCodeAdmin(admin.ModelAdmin):
+    list_display = ['code', 'network', 'status', 'uses', 'max_uses', 'expires_at', 'created_by', 'created_at']
+    list_filter = ['status', 'network', 'created_at']
+    search_fields = ['code', 'network__name', 'description']
+    readonly_fields = ['uses', 'created_at']
+
+    def is_active(self, obj):
+        return obj.is_active
+    is_active.boolean = True
+    is_active.short_description = 'Active'
