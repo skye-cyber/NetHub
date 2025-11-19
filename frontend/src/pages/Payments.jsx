@@ -13,6 +13,7 @@ import {
     CheckCircleIcon as CheckCircleSolid,
     XCircleIcon as XCircleSolid
 } from '@heroicons/react/24/solid';
+import AlertUser from '../components/Notify/Notification';
 
 const PaymentPage = () => {
     const [selectedPlan, setSelectedPlan] = useState(null);
@@ -22,6 +23,7 @@ const PaymentPage = () => {
     const [paymentStatus, setPaymentStatus] = useState(null);
     const [transactionId, setTransactionId] = useState('');
     const [queuePosition, setQueuePosition] = useState(null);
+    const [paymentStats, setPaymentStats] = useState({ message: "", type: "" })
 
     const pricingPlans = [
         {
@@ -157,8 +159,12 @@ const PaymentPage = () => {
     };
 
     const initiateMpesaPayment = async () => {
-        if (!phoneNumber || !phoneNumber.startsWith('254') || phoneNumber.length !== 12) {
-            alert('Please enter a valid Kenyan phone number (254...)');
+        if (!phoneNumber) return setPaymentStats({ message: "Phone Number is required", type: "warning" })
+        const is_local_fmt = (phoneNumber.startsWith('07') || phoneNumber.startsWith('01') && phoneNumber.length === 10)
+        const is_international_fmt = (phoneNumber.startsWith('+254') || phoneNumber.startsWith('254') || phoneNumber.length === 12)
+
+        if (!is_local_fmt && !is_international_fmt) {
+            setPaymentStats({ message: "Invalid Phone Number", type: "warning" })
             return;
         }
 
@@ -182,6 +188,7 @@ const PaymentPage = () => {
             }
         } catch (error) {
             console.error('Payment initiation failed:', error);
+            setPaymentStats({ message: "Payment initiation failed", type: "error" })
             setPaymentStatus('failed');
             setIsProcessing(false);
         }
@@ -211,12 +218,15 @@ const PaymentPage = () => {
                     setQueuePosition(null);
                     setIsProcessing(false);
                     clearInterval(pollInterval);
+                    setPaymentStats({ message: "Payment completed", type: "success" })
                 } else if (status === 'failed') {
                     setPaymentStatus('failed');
                     setQueuePosition(null);
                     setIsProcessing(false);
                     clearInterval(pollInterval);
+                    setPaymentStats({ message: "Payment failed", type: "error" })
                 }
+                setPaymentStats({ message: "Payment in progress", type: "info" })
                 // Continue polling if still pending
             } catch (error) {
                 console.error('Status check failed:', error);
@@ -257,11 +267,10 @@ const PaymentPage = () => {
 
         return (
             <div
-                className={`bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-lg border-2 transition-all duration-300 hover:scale-105 hover:shadow-xl ${
-                    isSelected
-                        ? 'border-blue-500 dark:border-blue-400 shadow-blue-200 dark:shadow-blue-900/50'
-                        : 'border-white/20 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600'
-                } ${plan.popular ? 'ring-2 ring-purple-500 dark:ring-purple-400' : ''}`}
+                className={`bg-white/80 dark:bg-primary-800/80 backdrop-blur-sm rounded-2xl shadow-lg border-2 transition-all duration-300 hover:scale-105 hover:shadow-xl ${isSelected
+                    ? 'border-blue-500 dark:border-blue-400 shadow-blue-200 dark:shadow-blue-900/50'
+                    : 'border-white/20 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600'
+                    } ${plan.popular ? 'ring-2 ring-purple-500 dark:ring-purple-400' : ''}`}
             >
                 {plan.popular && (
                     <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-center py-2 text-sm font-semibold rounded-t-2xl">
@@ -314,11 +323,10 @@ const PaymentPage = () => {
                     {/* Select Button */}
                     <button
                         onClick={() => handlePlanSelect(plan)}
-                        className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${
-                            isSelected
-                                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
-                                : `bg-gradient-to-r ${plan.color} text-white hover:shadow-lg`
-                        }`}
+                        className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${isSelected
+                            ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
+                            : `bg-gradient-to-r ${plan.color} text-white hover:shadow-lg`
+                            }`}
                     >
                         {isSelected ? 'Selected' : 'Select Plan'}
                     </button>
@@ -333,163 +341,172 @@ const PaymentPage = () => {
         const PaymentIcon = paymentMethods.find(method => method.id === paymentMethod)?.icon;
 
         return (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-2xl max-w-md w-full border border-white/20 dark:border-gray-700/50">
-                    {/* Header */}
-                    <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                                <LockClosedIcon className="w-6 h-6 text-green-500" />
-                                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                                    Complete Payment
-                                </h2>
+            <>
+                <AlertUser message={paymentStats.message} type={paymentStats.type} />
+
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-0.5 z-50">
+                    <div className="relative bg-white/90 dark:bg-primary-800/90 backdrop-blur-sm rounded-2xl shadow-2xl max-w-md md:max-w-lg lg:max-w-xl max-h-[100%] w-full border border-white/20 dark:border-gray-700/50 overflow-y-auto">
+
+                        {/* Header */}
+                        <div className="sticky top-0 w-full z-10 bg-white dark:bg-primary-700 p-2 md:p-4 border-b border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                    <LockClosedIcon className="w-6 h-6 text-green-500" />
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                                        Complete Payment
+                                    </h2>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedPlan(null)}
+                                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                >
+                                    <XCircleIcon className="w-6 h-6" />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setSelectedPlan(null)}
-                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                            >
-                                <XCircleIcon className="w-6 h-6" />
-                            </button>
                         </div>
-                    </div>
 
-                    {/* Plan Summary */}
-                    <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                                {selectedPlan.name}
+                        {/* Plan Summary */}
+                        <div className="p-2 md:p-4 border-b border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                    {selectedPlan.name}
+                                </h3>
+                                <span className="txt-lg sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                    KES {selectedPlan.price}
+                                </span>
+                            </div>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm">
+                                {selectedPlan.duration} of premium internet access
+                            </p>
+                        </div>
+
+                        {/* Payment Method Selection */}
+                        <div className="p-2 sm:p-4 border-b border-gray-200 dark:border-gray-700">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                                Payment Method
                             </h3>
-                            <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                                KES {selectedPlan.price}
-                            </span>
-                        </div>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            {selectedPlan.duration} of premium internet access
-                        </p>
-                    </div>
-
-                    {/* Payment Method Selection */}
-                    <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                            Payment Method
-                        </h3>
-                        <div className="space-y-3">
-                            {paymentMethods.map(method => {
-                                const MethodIcon = method.icon;
-                                return (
-                                    <label
-                                        key={method.id}
-                                        className={`flex items-center space-x-4 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                                            paymentMethod === method.id
+                            <div className="block md:flex md:items-center md:gap-2 space-y-2 sm:space-y-3">
+                                {paymentMethods.map(method => {
+                                    const MethodIcon = method.icon;
+                                    return (
+                                        <label
+                                            key={method.id}
+                                            className={`flex md:flex-1 items-center space-x-2 md:space-x-2 p-2 md:p-4 md:max-h-24 rounded-xl border-2 cursor-pointer transition-all duration-200 ${paymentMethod === method.id
                                                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
                                                 : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                                        }`}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="paymentMethod"
-                                            value={method.id}
-                                            checked={paymentMethod === method.id}
-                                            onChange={(e) => setPaymentMethod(e.target.value)}
-                                            className="text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <MethodIcon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                                        <div className="flex-1">
-                                            <div className="font-medium text-gray-900 dark:text-white">
-                                                {method.name}
+                                                }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="paymentMethod"
+                                                value={method.id}
+                                                checked={paymentMethod === method.id}
+                                                onChange={(e) => setPaymentMethod(e.target.value)}
+                                                className="hidden text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <MethodIcon className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600 dark:text-gray-400" />
+                                            <div className="flex-1">
+                                                <div className="font-medium text-gray-900 dark:text-white">
+                                                    {method.name}
+                                                </div>
+                                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                                    {method.description}
+                                                </div>
                                             </div>
-                                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                                                {method.description}
-                                            </div>
-                                        </div>
-                                    </label>
-                                );
-                            })}
+                                        </label>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Payment Details */}
-                    <div className="p-6">
-                        {paymentMethod === 'mpesa' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        M-Pesa Phone Number
-                                    </label>
-                                    <input
-                                        type="tel"
-                                        placeholder="2547XXXXXXXX"
-                                        value={phoneNumber}
-                                        onChange={(e) => setPhoneNumber(e.target.value)}
-                                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                        Enter your M-Pesa registered phone number
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {paymentMethod === 'card' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Card Number
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="1234 5678 9012 3456"
-                                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
+                        {/* Payment Details */}
+                        <div className="p-3 md:p-6">
+                            {paymentMethod === 'mpesa' && (
+                                <div className="space-y-2 md:space-y-3">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                            Expiry Date
+                                            M-Pesa Phone Number
                                         </label>
                                         <input
-                                            type="text"
-                                            placeholder="MM/YY"
-                                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            type="tel"
+                                            placeholder="2547XXXXXXXX"
+                                            value={phoneNumber}
+                                            autoFocus="true"
+                                            required
+                                            onChange={(e) => setPhoneNumber(e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-300 dark:border-blend-500 rounded-xl bg-white dark:bg-primary-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                         />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                            CVV
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder="123"
-                                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        />
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                            Enter the M-Pesa registered phone number
+                                        </p>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Payment Button */}
-                        <button
-                            onClick={handlePayment}
-                            disabled={isProcessing || (paymentMethod === 'mpesa' && !phoneNumber)}
-                            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 rounded-xl font-semibold mt-6 hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
-                        >
-                            {isProcessing ? (
-                                <div className="flex items-center justify-center space-x-2">
-                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                                    <span>Processing...</span>
-                                </div>
-                            ) : (
-                                `Pay KES ${selectedPlan.price}`
                             )}
-                        </button>
 
-                        <div className="flex items-center justify-center space-x-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
-                            <ShieldCheckIcon className="w-4 h-4" />
-                            <span>Secure payment encrypted</span>
+                            {paymentMethod === 'card' && (
+                                <div className="space-y-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                            Card Number
+                                        </label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="1234 5678 9012 3456"
+                                            className="w-full px-4 py-3 border border-gray-300 dark:border-blend-500 rounded-xl bg-white dark:bg-primary-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                Expiry Date
+                                            </label>
+                                            <input
+                                                type="text"
+                                                placeholder="MM/YY"
+                                                required
+                                                className="w-full px-4 py-3 border border-gray-300 dark:border-blend-500 rounded-xl bg-white dark:bg-primary-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                CVV
+                                            </label>
+                                            <input
+                                                type="text"
+                                                placeholder="123"
+                                                required="true"
+                                                className="w-full px-4 py-3 border border-gray-300 dark:border-blend-500 rounded-xl bg-white dark:bg-primary-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Payment Button */}
+                            <button
+                                onClick={handlePayment}
+                                disabled={isProcessing || (paymentMethod === 'mpesa' && !phoneNumber)}
+                                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 rounded-xl font-semibold mt-6 hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
+                            >
+                                {isProcessing ? (
+                                    <div className="flex items-center justify-center space-x-2">
+                                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                        <span>Processing...</span>
+                                    </div>
+                                ) : (
+                                    `Pay KES ${selectedPlan.price}`
+                                )}
+                            </button>
+
+                            <div className="flex items-center justify-center space-x-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
+                                <ShieldCheckIcon className="w-4 h-4" />
+                                <span>Secure payment encrypted</span>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </>
         );
     };
 
@@ -538,11 +555,11 @@ const PaymentPage = () => {
 
         return (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-2xl max-w-md w-full border border-white/20 dark:border-gray-700/50">
+                <div className="bg-white/90 dark:bg-primary-800/90 backdrop-blur-sm rounded-2xl shadow-2xl max-w-md w-full border border-white/20 dark:border-gray-700/50">
                     <div className="p-8 text-center">
                         <StatusIcon className={`w-16 h-16 mx-auto mb-4 ${statusContent.color}`} />
 
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                        <h2 className="text-2xl font-bold text-primary-900 dark:text-white mb-2">
                             {statusContent.title}
                         </h2>
 
@@ -551,7 +568,7 @@ const PaymentPage = () => {
                         </p>
 
                         {transactionId && (
-                            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 mb-4">
+                            <div className="bg-gray-100 dark:bg-secondary-600 shadow-none rounded-lg p-3 mb-4">
                                 <div className="text-sm text-gray-600 dark:text-gray-400">Transaction ID</div>
                                 <div className="font-mono text-gray-900 dark:text-white">{transactionId}</div>
                             </div>
@@ -606,7 +623,7 @@ const PaymentPage = () => {
                                         setSelectedPlan(null);
                                         setPaymentStatus(null);
                                     }}
-                                    className="w-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-3 rounded-xl font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                                    className="w-full bg-gray-200 dark:bg-primary-600 text-gray-700 dark:text-gray-300 py-3 rounded-xl font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                                 >
                                     Choose Different Plan
                                 </button>
@@ -619,7 +636,7 @@ const PaymentPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20 p-4">
+        <div className="min-h-screen bg-gradient-to-br from-primary-50 via-blue-50 to-cyan-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20 p-4">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-12">

@@ -11,46 +11,10 @@ import {
     CheckIcon,
     XMarkIcon
 } from '@heroicons/react/24/outline';
+import { updateSettings, getSettings } from '../services/api';
 
 const SettingsPage = () => {
-    const [settings, setSettings] = useState({
-        // Network Settings
-        network_name: "NetHub Premium",
-        max_devices_per_user: 5,
-        session_timeout: 24,
-        bandwidth_limit: 1000, // MB
-        allow_guest_network: true,
-
-        // Payment & Monetization
-        free_internet_enabled: false,
-        paid_mode_enabled: true,
-        payment_gateway: "stripe",
-        currency: "USD",
-        hourly_rate: 2.50,
-        daily_rate: 15.00,
-        monthly_rate: 99.00,
-
-        // Security Settings
-        require_authentication: true,
-        enable_captive_portal: true,
-        block_vpn_connections: false,
-        enable_mac_filtering: true,
-        log_retention_days: 90,
-
-        // Notification Settings
-        email_notifications: true,
-        sms_notifications: false,
-        low_balance_alerts: true,
-        security_alerts: true,
-        monthly_reports: true,
-
-        // System Settings
-        maintenance_mode: false,
-        auto_backup: true,
-        backup_frequency: "daily",
-        system_logs: true,
-        debug_mode: false
-    });
+    const [settings, setSettings] = useState({});
 
     const [loading, setLoading] = useState(false);
     const [saveStatus, setSaveStatus] = useState('');
@@ -62,8 +26,8 @@ const SettingsPage = () => {
     const loadSettings = async () => {
         try {
             setLoading(true);
-            // const response = await axios.get('/api/settings/');
-            // setSettings(response.data);
+            const response = await getSettings()
+            setSettings(response.data);
         } catch (error) {
             console.error('Error loading settings:', error);
         } finally {
@@ -75,9 +39,14 @@ const SettingsPage = () => {
         try {
             setLoading(true);
             setSaveStatus('saving');
-            // await axios.put('/api/settings/', settings);
-            setSaveStatus('saved');
-            setTimeout(() => setSaveStatus(''), 3000);
+            const response = await updateSettings(settings)
+            if (response.status === 200) {
+                setSaveStatus('saved');
+                setTimeout(() => setSaveStatus(''), 3000);
+            } else {
+                throw Error(response.statusText)
+            }
+
         } catch (error) {
             console.error('Error saving settings:', error);
             setSaveStatus('error');
@@ -203,6 +172,15 @@ const SettingsPage = () => {
                         {/* Network Settings */}
                         <SettingSection title="Network Configuration" icon={WifiIcon}>
                             <div className="space-y-2">
+                                {/*<SelectSetting
+                                    label="Seletc Network"
+                                    description="Network to configure"
+                                    options={[]}
+                                    value={settings.network_name}
+                                    onChange={(value) => handleSettingChange('network_name', value)}
+                                />*/
+                                }
+
                                 <InputSetting
                                     label="Network Name"
                                     description="Display name for your network"
@@ -465,8 +443,8 @@ const SettingsPage = () => {
                                 <div className="flex items-center space-x-4">
                                     {saveStatus && (
                                         <span className={`flex items-center space-x-2 text-sm ${saveStatus === 'saved' ? 'text-green-600 dark:text-green-400' :
-                                                saveStatus === 'error' ? 'text-red-600 dark:text-red-400' :
-                                                    'text-blue-600 dark:text-blue-400'
+                                            saveStatus === 'error' ? 'text-red-600 dark:text-red-400' :
+                                                'text-blue-600 dark:text-blue-400'
                                             }`}>
                                             {saveStatus === 'saved' && <CheckIcon className="w-4 h-4" />}
                                             {saveStatus === 'error' && <XMarkIcon className="w-4 h-4" />}

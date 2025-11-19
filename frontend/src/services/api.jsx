@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create instance with baseURL that will work in both dev and production
 const api = axios.create({
     baseURL: process.env.NODE_ENV === 'development'
-        ? 'http://192.168.12.1:8001/api'  // Will use proxy in development
+        ? 'http://127.0.0.1:8001/api'  // Will use proxy in development
         : window.location.origin,  // Uses same origin in production
     timeout: 10000,
 });
@@ -45,6 +45,12 @@ export const generateAccessCode = async (codeData) => api.get('access-codes', co
 export const getDeviceHistory = async () => api.get('/devices/v2');
 
 export const getReports = async () => api.get('/reports')
+
+export const getSettings = async () => api.get('/settings')
+
+export const updateSettings = async (settings) => api.put('/settings', settings)
+
+export const getSettingsHistory = async () => api.get('/settings/history')
 
 
 export default api;
