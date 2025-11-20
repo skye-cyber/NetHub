@@ -1,6 +1,35 @@
 from django.contrib import admin
-from django.contrib.auth.models import User
+from django.contrib.auth.models import CustomUser
 from .models import UserProfile
+from django.contrib.auth.admin import UserAdmin
+
+
+@admin.register(CustomUser)
+class CustomUserAdmin(UserAdmin):
+    list_display = ("username", "email", "is_online", "last_seen", "is_staff")
+    list_filter = ("is_online", "is_staff", "is_superuser", "created_at")
+    search_fields = ("username", "email", "first_name", "last_name")
+    readonly_fields = ("last_seen", "created_at", "updated_at")
+
+    fieldsets = UserAdmin.fieldsets + (
+        (
+            "User Features",
+            {
+                "fields": (
+                    "is_online",
+                    "last_seen",
+                    "avatar",
+                    "bio",
+                    "color_scheme",
+                )
+            },
+        ),
+        ("Timestamps", {"fields": ("created_at", "updated_at")}),
+    )
+
+    def get_role(self, obj):
+        return obj.profile.role if hasattr(obj, 'profile') else 'No Profile'
+    get_role.short_description = 'Role'
 
 
 @admin.register(UserProfile)
@@ -20,21 +49,3 @@ class UserProfileInline(admin.StackedInline):
     model = UserProfile
     can_delete = False
     verbose_name_plural = 'Profile'
-
-
-class CustomUserAdmin(User):
-    inlines = [UserProfileInline]
-    list_display = ['username', 'email', 'first_name', 'last_name', 'get_role', 'is_staff', 'is_active']
-
-    def get_role(self, obj):
-        return obj.profile.role if hasattr(obj, 'profile') else 'No Profile'
-    get_role.short_description = 'Role'
-
-
-# Re-register UserAdmin
-try:
-    admin.site.unregister(User)
-except Exception:
-    pass
-
-admin.site.register(User)

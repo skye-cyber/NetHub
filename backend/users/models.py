@@ -1,5 +1,82 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
+import uuid
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class CustomUser(AbstractUser):
+    """
+    Custom user model extending Django's AbstractUser.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True)
+    is_online = models.BooleanField(default=False)
+    last_seen = models.DateTimeField(default=timezone.now)
+    avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
+    bio = models.TextField(max_length=500, blank=True, null=True)
+
+    # User preferences
+    color_scheme = models.CharField(
+        max_length=20,
+        default="blue",
+        choices=[
+            ("blue", "Blue"),
+            ("green", "Green"),
+            ("purple", "Purple"),
+            ("red", "Red"),
+            ("yellow", "Yellow"),
+            ("indigo", "Indigo"),
+            ("pink", "Pink"),
+        ],
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "users"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.username
+
+    @property
+    def online(self):
+        return self.is_active
+
+    @property
+    def color(self):
+        """Get user's color for UI elements"""
+        return self.color_scheme
+
+    def update_last_seen(self):
+        """Update last seen timestamp"""
+        self.last_seen = timezone.now()
+        self.save()
+
+    @property
+    def is_privileged(self):
+        return self.is_staff
+
+    @property
+    def is_admin(self):
+        return self.is_superuser
+
+    def _serialize_custom_user(self, instance):
+        """Optimized custom user serialization"""
+        return {
+            "user_id": str(instance.id),
+            "username": instance.username,
+            "email": instance.email,
+            "is_online": instance.is_online,
+            "last_seen": instance.last_seen.isoformat() if instance.last_seen else None,
+            "avatar": str(instance.avatar) if instance.avatar else None,
+            "bio": instance.bio or "",
+        }
 
 
 class UserProfile(models.Model):
