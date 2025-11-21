@@ -9,20 +9,23 @@ import sys
 import subprocess
 import argparse
 import json
-import time
 from pathlib import Path
 
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
 class HotspotManager:
-    def __init__(self):
-        self.config_file = Path.home() / '.hotspot_config.json'
+    def __init__(self, interface='wlan0', ssid='MyCustomHotspot', channel='6', ip_range='192.168.100.0/24', gateway='192.168.100.1', mode='nmcli', password=''):
+        self.config_file = BASE_DIR / 'config/.hotspot_config.json'
         self.default_config = {
-            'ssid': 'MyCustomHotspot',
-            'password': 'StrongPassword123',
-            'interface': 'wlan0',
-            'mode': 'nmcli',  # 'nmcli' or 'systemd'
-            'channel': '6',
-            'ip_range': '192.168.100.0/24',
-            'gateway': '192.168.100.1'
+            'ssid': ssid,
+            'password': password,
+            'interface': interface,
+            'mode': mode,  # 'nmcli' or 'systemd'
+            'channel': channel,
+            'ip_range': ip_range,
+            'gateway': gateway
         }
         self.load_config()
 
@@ -156,6 +159,7 @@ DNS=8.8.8.8
 
             # Enable and start services
             subprocess.run(['systemctl', 'enable', '--now', 'systemd-networkd'], check=True)
+            subprocess.run(['systemctl', 'unmask', 'hostapd'], check=True)
             subprocess.run(['systemctl', 'enable', '--now', 'hostapd'], check=True)
 
             print("systemd-networkd hotspot configured successfully")
@@ -230,10 +234,11 @@ DNS=8.8.8.8
         self.save_config()
         print("Configuration updated successfully")
 
+
 def main():
     parser = argparse.ArgumentParser(description='Custom Hotspot Manager')
     parser.add_argument('action', choices=['start', 'stop', 'status', 'configure', 'interfaces'],
-                       help='Action to perform')
+                        help='Action to perform')
     parser.add_argument('--ssid', help='SSID for the hotspot')
     parser.add_argument('--password', help='Password for the hotspot')
     parser.add_argument('--interface', help='Wireless interface to use')
@@ -242,19 +247,26 @@ def main():
     args = parser.parse_args()
     manager = HotspotManager()
 
-    if args.action == 'start':
-        manager.start_hotspot()
-    elif args.action == 'stop':
-        manager.stop_hotspot()
-    elif args.action == 'status':
-        manager.show_status()
-    elif args.action == 'configure':
-        manager.configure(args.ssid, args.password, args.interface, args.mode)
-    elif args.action == 'interfaces':
-        interfaces = manager.get_available_interfaces()
-        print("Available wireless interfaces:")
-        for iface in interfaces:
-            print(f"  - {iface}")
+    try:
+        if args.action == 'start':
+            manager.start_hotspot()
+        elif args.action == 'stop':
+            manager.stop_hotspot()
+        elif args.action == 'status':
+            manager.show_status()
+        elif args.action == 'configure':
+            manager.configure(args.ssid, args.password, args.interface, args.mode)
+        elif args.action == 'interfaces':
+            interfaces = manager.get_available_interfaces()
+            print("Available wireless interfaces:")
+            for iface in interfaces:
+                print(f"  - {iface}")
+
+    except KeyboardInterrupt:
+        sys.exit('\nQuit')
+    except Exception as e:
+        sys.exit(e)
+
 
 if __name__ == '__main__':
     if os.geteuid() != 0:
