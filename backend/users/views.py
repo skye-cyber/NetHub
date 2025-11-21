@@ -1,9 +1,9 @@
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_POST
-from portal.views import BaseAPIView
+from util.view_utils import BaseAPIView
 from .models import CustomUser, UserProfile
-from portal.models import Network
+from networks.models import Network
 from django.contrib.auth import login, logout, authenticate, get_backends
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required

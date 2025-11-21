@@ -38,6 +38,9 @@ INSTALLED_APPS = [
     "corsheaders",
     'users',
     'management',
+    'networks',
+    'hotspotmanager',
+
 ]
 
 MIDDLEWARE = [
@@ -71,7 +74,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "NetHub.wsgi.application"
 
-AUTH_USER_MODEL = "users.CustomUser"
+# AUTH_USER_MODEL = "users.CustomUser"
 
 # Authentication backends
 AUTHENTICATION_BACKENDS = [

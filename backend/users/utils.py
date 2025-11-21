@@ -36,4 +36,4 @@ def flushSession(request):
 def set_csrf_token(request):
     # _, token = set_test_cookie(request)
     # return JsonResponse({"detail": "CSRF cookie set", "csrf": token})
-
+    pass

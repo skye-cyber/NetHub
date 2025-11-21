@@ -1,14 +1,17 @@
+import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.contrib.auth.decorators import login_required
-import json
-from .models import SystemSettings, SettingsHistory, Network, AccessCode
+from networks.models import Network
 from devices.models import Device, DeviceHistory
 from util.view_utils import BaseAPIView
 from django.utils import timezone
-from util.device_scanner import DeviceScanner
+from util.netscanner import NetScanner
+from .models import SystemSettings, SettingsHistory, AccessCode
+
+net_scanner = NetScanner()
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -290,19 +293,21 @@ class AdminAccessAPIView(BaseAPIView):
 
 def admin_check_access(request, mac):
     """Check access for specific MAC"""
-    scanner = DeviceScanner()
-
     # Get device info
-    devices = scanner.get_connected_devices()
-    device_info = next((d for d in devices if d["mac"] == mac), None)
+    device = net_scanner.get_connected_devices()
 
-    is_authenticated = scanner.is_authenticated(mac)
-
-    return JsonResponse(
-        {
-            "mac": mac,
-            "authenticated": is_authenticated,
-            "device_info": device_info,
-            "status": "authenticated" if is_authenticated else "blocked",
-        }
-    )
+    if device:
+        return JsonResponse(
+            {
+                "mac": mac,
+                "authenticated": device.is_authenticated,
+                "device_info": device,
+                "status": device.auth_status
+            }
+        )
+    return JsonResponse({
+        "mac": mac,
+        "authenticated": False,
+        "device_info": {},
+        "status": False
+    })

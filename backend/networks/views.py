@@ -47,7 +47,7 @@ class NetworkAPIView(BaseAPIView):
         try:
             network = Network.objects.create(
                 name=data.get('name'),
-                name=data.get('interface', 'ap0'),
+                interface=data.get('interface', 'ap0'),
                 ssid=data.get('ssid'),
                 security=data.get('security', 'wpa2'),
                 password=data.get('password'),
