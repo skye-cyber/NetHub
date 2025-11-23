@@ -1,0 +1,9 @@
+{
+  "ssid": "MyCustomHotspot",
+  "password": "pass12345",
+  "interface": "wlan0",
+  "mode": "nmcli",
+  "channel": "6",
+  "ip_range": "192.168.100.0/24",
+  "gateway": "192.168.100.1"
+}

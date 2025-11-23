@@ -12,7 +12,7 @@ class Subscription(models.Model):
         WEEKLY = "weekly", "Weekly Subscription"
         MONTHLY = "montly", "Monthly subscription"
 
-    host = models.ForeignKey('portal.Device', on_delete=models.CASCADE, related_name='subscribed_device')
+    host = models.ForeignKey('devices.Device', on_delete=models.CASCADE, related_name='subscribed_device')
     plan = models.CharField(max_length=30, choices=Plans.choices, default=None)
     start_time = models.DateTimeField(auto_now=True)
     end_time = models.DateTimeField(null=True)

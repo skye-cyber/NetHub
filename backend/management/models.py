@@ -31,7 +31,7 @@ class SystemSettings(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # Network Settings
-    network = models.ForeignKey('portal.Network', on_delete=models.CASCADE, null=True)
+    network = models.ForeignKey('networks.Network', on_delete=models.CASCADE, null=True)
     network_name = models.CharField(max_length=100, default="NetHub")
     max_devices_per_user = models.IntegerField(default=5)
     session_timeout = models.IntegerField(default=24)  # hours

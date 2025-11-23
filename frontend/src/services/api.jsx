@@ -28,7 +28,7 @@ export const connectToNetwork = () => api.post('/connect');
 export const getStatus = () => api.get('/status');
 export const deviceInfor = () => api.get('/clientinfo');
 export const grantAccess = (mac) => api.post(`/admin/grant_access/${mac}`);
-export const revokeAccess = (mac) => api.post(`//admin/revoke_access/${mac}`);
+export const revokeAccess = (mac) => api.post(`/admin/revoke_access/${mac}`);
 
 // --
 

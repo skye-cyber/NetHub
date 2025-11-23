@@ -112,6 +112,12 @@ class NetScanner:
         )
         return new_devices
 
+    def get_all_devices(self):
+        return Device.objects.all().values('mac_address').values_list()
+
+    def get_device_by_mac(self, mac):
+        return Device.objects.filter(mac_address=mac) if mac else None
+
 
 net_scanner = NetScanner()
 

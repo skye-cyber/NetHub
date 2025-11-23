@@ -25,7 +25,7 @@ class Network(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
-    subnet = models.IPAddressField(default='192.168.1.0/24')
+    subnet = models.GenericIPAddressField(default='192.168.1.0/24')
     interface = models.CharField(max_length=10, null=True)
     ssid = models.CharField(max_length=32, unique=True)
     security = models.CharField(max_length=20, choices=SECURITY_CHOICES, default='wpa2')

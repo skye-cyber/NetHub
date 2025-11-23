@@ -1,19 +1,16 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import User
 from django.utils import timezone
-import uuid
 from django.contrib.auth import get_user_model
 
-User = get_user_model()
+_User = get_user_model()
 
 
-class CustomUser(AbstractUser):
+class CustomUser(User):
     """
     Custom user model extending Django's AbstractUser.
     """
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True)
     is_online = models.BooleanField(default=False)
     last_seen = models.DateTimeField(default=timezone.now)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
@@ -92,10 +89,10 @@ class UserProfile(models.Model):
         ('suspended', 'Suspended'),
     ]
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='user_profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='viewer')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    networks = models.ManyToManyField('portal.Network', related_name='authorized_users', blank=True)
+    networks = models.ManyToManyField('networks.Network', related_name='authorized_users', blank=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     department = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
