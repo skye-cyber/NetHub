@@ -1,10 +1,11 @@
 {
-
-    "Name": "wlan0",
-    "Address": "192.168.100.0/24",
-    "DHCPServer": "yes",
-    "PoolOffset": 10,
-    "PoolSize": 50,
-    "EmitDNS": "yes",
-    "DNS": "8.8.8.8"
+  "Name": "wlan0",
+  "Address": "192.168.100.0/24",
+  "DHCPServer": "yes",
+  "PoolOffset": 10,
+  "PoolSize": 50,
+  "EmitDNS": "yes",
+  "DNS": "8.8.8.8",
+  "channel": "6",
+  "country": "UG"
 }

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -7,6 +8,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class ConfigManager:
     def __init__(self, config_file: dict = BASE_DIR / 'config/config.json'):
         self.config_file = config_file
+        self.config = {}
+
+    def __enter__(self):
+        # Ensure we are using update config
         self.config = self.load_config()
 
     @property
@@ -15,13 +20,16 @@ class ConfigManager:
 
     def load_config(self):
         """Load configuration from file"""
-        if self.config_file.exists():
-            with open(self.config_file, 'r') as f:
-                self.config = json.load(f)
-                # self.config = {**self.default_config, **user_config}
-        else:
-            raise Exception(f"Config file not found {self.config_file}")
-        return self.config
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, 'r') as f:
+                    self.config = json.load(f)
+                    # self.config = {**self.default_config, **user_config}
+            else:
+                raise Exception(f"Config file not found {self.config_file}")
+            return self.config
+        except IOError:
+            sys.exit(f"Error: Unable to read config file {self.config_file}")
 
     def update_config(self):
         """Save configuration to file"""
@@ -55,6 +63,10 @@ class ConfigManager:
     @property
     def __bconfdir__(self):
         return BASE_DIR / 'config'
+
+    def is_config_opt(self, opt: str) -> bool:
+        """Check if an option is a valid configuration option."""
+        return opt in self.config.keys()
 
 
 config_manager = ConfigManager()
