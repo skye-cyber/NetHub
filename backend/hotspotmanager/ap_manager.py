@@ -5,9 +5,11 @@ Supports both NetworkManager and systemd-networkd
 """
 import re
 import os
-import shutil
 import sys
+import signal
 import time
+import uuid
+from typing import Optional, List
 from threading import Thread
 import subprocess
 from pathlib import Path
@@ -15,7 +17,6 @@ from ap_utils.config import config_manager, ConfigManager
 from lock import lock
 from netmanager import NetworkManager
 from cleanup import CleanupManager
-import tempfile
 from ap_utils.copy import cp_n_safe
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,17 +34,17 @@ class ApManager:
     def get_instance(cls):
         return cls()
 
-    def __init__(self, use_psk=True):
+    def __init__(self):
         self.config_manager = config_manager
 
-        self.config = {}
+        self.config = config_manager.get_config
         # make sure that all command outputs are in english
         # so we can parse them correctly
         # subprocess.run(['export', 'LC_ALL=C'])
 
         # all new files and directories must be readable only by root.
         # in special cases we must use chmod to give any other permissions.
-        self.SCRIPT_UMASK = "0077"
+        # self.SCRIPT_UMASK = "0077"
 
         # lock file for the mutex counter
         self.COUNTER_LOCK_FILE = f"/tmp/ap_manager.{os.getpid()}.lock"
@@ -62,12 +63,21 @@ class ApManager:
         self.clean = CleanupManager(self)
 
         self.proc_dir = self.config['proc_dir']
-        self.conf_dir = self.config['proc_dir']
+        self.conf_dir = self.config.get('conf_dir', config_manager.__bconfdir__)
+
+        os.makedirs(self.proc_dir, exist_ok=True)
+        os.makedirs(self.conf_dir, exist_ok=True)
+
+        # Set proper permissions for base_dir
+        # os.chmod(self.config['base_dir'], 0o444)
+
         self.iface_dir = os.path.join(self.config['base_dir'], 'ifaces')
+
         self.virt_diems = "Maybe your WiFi adapter does not fully support virtual interfaces. Try again with --no-virt."
 
     def __enter__(self):
         self.config = config_manager.get_config
+        self.clean = CleanupManager(self)
 
     def _ap_init_(self):
         """Initialize the access point with proper configuration."""
@@ -75,13 +85,14 @@ class ApManager:
             # Lock mutex for thread safety
             self.lock.mutex_lock()
 
-            conf_dir = self.config['proc_dir']
-
             # Create configuration directory if it doesn't exist
-            os.makedirs(self.config['common_conf_dir'], exist_ok=True)
+            os.makedirs(self.config['conf_dir'], exist_ok=True)
 
             # Write PID file
-            pid_file = os.path.join(conf_dir, 'pid')
+            _uuid_ = uuid.uuid4()
+            pidf_name = f"ap_manager-{str(_uuid_)[:6]}.pid"  # posfix basename with 6 char uuid4
+
+            pid_file = os.path.join(self.proc_dir, pidf_name)
             with open(pid_file, 'w') as f:
                 f.write(str(os.getpid()))
 
@@ -89,21 +100,21 @@ class ApManager:
             os.chmod(pid_file, 0o444)
 
             # Write internet interface information
-            nat_internet_file = os.path.join(conf_dir, 'nat_internet_iface')
+            nat_internet_file = os.path.join(self.conf_dir, 'nat_internet_iface')
             with open(nat_internet_file, 'w') as f:
                 f.write(self.config['internet_iface'])
 
             forwarding_src = f"/proc/sys/net/ipv4/conf/{self.config['internet_iface']}/forwarding"
-            forwarding_dst = os.path.join(conf_dir, f"{self.config['internet_iface']}_forwarding")
+            forwarding_dst = os.path.join(self.conf_dir, f"{self.config['internet_iface']}_forwarding")
             cp_n_safe(forwarding_src, forwarding_dst)
 
             ip_forward_src = "/proc/sys/net/ipv4/ip_forward"
-            ip_forward_dst = os.path.join(conf_dir, 'ip_forward')
+            ip_forward_dst = os.path.join(self.conf_dir, 'ip_forward')
             cp_n_safe(ip_forward_src, ip_forward_dst)
 
             if os.path.exists('/proc/sys/net/bridge/bridge-nf-call-iptables'):
                 bridge_src = '/proc/sys/net/bridge/bridge-nf-call-iptables'
-                bridge_dst = os.path.join(conf_dir, 'bridge-nf-call-iptables')
+                bridge_dst = os.path.join(self.conf_dir, 'bridge-nf-call-iptables')
             cp_n_safe(bridge_src, bridge_dst)
 
             # Unlock mutex
@@ -158,7 +169,10 @@ class ApManager:
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
             try:
-                wifi_iface_file = os.path.join(conf_dir, 'wifi_iface')
+                iface_dir = os.path.join(self.conf_dir, pid_file.strip('.pid'))
+                os.makedirs(iface_dir, exist_ok=True)
+
+                wifi_iface_file = os.path.join(iface_dir, 'wifi_iface')
                 with open(wifi_iface_file, 'w') as f:
                     f.write(self.config['wifi_iface'])
                 os.chmod(wifi_iface_file, 0o444)
@@ -264,7 +278,8 @@ class ApManager:
             elif self.config['share_method'] == "bridge":
                 try:
                     # Disable iptables rules for bridged interfaces
-                    if os.path.exists("/proc/sys/net/bridge/bridge-nf-call-iptables"):
+                    iptable_rules_file = "/proc/sys/net/bridge/bridge-nf-call-iptables"
+                    if os.path.exists(iptable_rules_file):
                         with open("/proc/sys/net/bridge/bridge-nf-call-iptables", 'w') as f:
                             f.write('0')
 
@@ -418,7 +433,7 @@ class ApManager:
 
             # Save the PID
             self.hostapd_pid = self.hostapd_process.pid
-            with open(os.path.join(self.conf_dir, 'hostapd.pid'), 'w') as f:
+            with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
                 f.write(str(self.hostapd_pid))
 
             # Wait for the process to complete
@@ -433,7 +448,7 @@ class ApManager:
                 # NetworkManager specific suggestions
                 if self.netmanager.networkmanager_is_running():
                     print("If an error like 'n80211: Could not configure driver mode' was thrown, "
-                        "try running the following before starting ap_manager:")
+                          "try running the following before starting ap_manager:")
 
                     if self.nm_older_version:
                         print("    nmcli nm wifi off")
@@ -653,8 +668,8 @@ class ApManager:
                     f.write(f"log-facility={self.config['dns_logfile']}\n")
 
                 # Redirect all traffic to localhost if requested
-                if (self.config.get('share_method') == "none" and
-                    self.config.get('redirect_to_localhost', False)):
+                if (self.config.get('share_method') == "none"
+                        and self.config.get('redirect_to_localhost', False)):
                     f.write(f"address=/#/{self.config['gateway']}\n")
 
         except (subprocess.CalledProcessError, IOError, KeyError) as e:
@@ -772,11 +787,11 @@ class ApManager:
         if self.is_wifi_connected(self.config['wifi_iface']):
             if not self.config['freq_band']:
                 wifi_iface_freq = self.netmanager._get_interface_freq_(self.config['wifi_iface'])
-                wifi_iface_channel = self.ieee80211_frequency_to_channel(iw_freq)
+                wifi_iface_channel = self.ieee80211_frequency_to_channel(wifi_iface_freq)
 
                 print(f"{self.config['wifi_iface']} is already associated with channel {wifi_iface_channel} ({wifi_iface_freq} MHz)")
 
-                self.config.update({'freq_band': 5}) if self.is_5ghz_frequency(iw_freq) else self.config.update({'freq_band': 2.4})
+                self.config.update({'freq_band': 5}) if self.is_5ghz_frequency(wifi_iface_freq) else self.config.update({'freq_band': 2.4})
 
                 if wifi_iface_channel != wifi_iface_channel:
                     if self._get_channels_() >= 2 and self.can_transmit_to_channel(self.config['wifi_iface'], self.config['channel']):
@@ -796,21 +811,50 @@ class ApManager:
                 print(f"Custom frequency band set with {self.config['freq_band']}Ghz with channel {self.config['channel']}")
 
     def create_virt_iface(self):
-        print("Creating a virtual WiFi interface... ")
+        """Create a virtual WiFi interface with proper configuration."""
+        print("Creating a virtual WiFi interface... ", end='')
 
-        if subprocess.run(['iw', 'dev', self.config['wifi_iface'], 'interface', 'add', self.config['vwifi_iface'], 'type', '__ap'], check=True, capture_output=True, text=True).returncode == 0:
-            # now we can call networkmanager_wait_until_unmanaged
-            if self.netmanager.networkmanager_is_running() and self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
-                print(f"{self.config['wifi_iface']} created")
-        else:
-            sys.exit(self.virt_diems)
+        try:
+            # Create the virtual interface
+            result = subprocess.run(
+                ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
+                self.config['vwifi_iface'], 'type', '__ap'],
+                check=True, capture_output=True, text=True
+            )
 
-        old_mac = self.get_macaddr(self.config['vwifi_iface'])
-        new_mac = self.config['mac']
-        if new_mac and new_mac not in self.get_all_macaddrs:
-            new_mac = self.get_new_macaddr(self.config['vwifi_iface'])
-            self.config.update({'mac': new_mac})
-            self.config.update({'wifi_iface': self.config['vwifi_iface']})
+            if result.returncode != 0:
+                self.config['vwifi_iface'] = None
+                self.clean.die(self.virt_diems)
+
+            # Wait for NetworkManager to recognize the interface if needed
+            if (self.netmanager.networkmanager_is_running() and self.netmanager.NM_OLDER_VERSION == 0):
+                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
+                    self.clean.die("Failed to wait for interface to be unmanaged")
+
+            print(f"{self.config['vwifi_iface']} created.")
+
+            # Handle MAC address configuration
+            old_mac = self.get_macaddr(self.config['vwifi_iface'])
+            new_mac = self.config.get('mac')
+
+            # Get all existing MAC addresses
+            all_macs = self.get_all_macaddrs()
+
+            # If no new MAC specified or it's already in use, generate a new one
+            if not new_mac or new_mac in all_macs:
+                new_mac = self.get_new_macaddr(self.config['vwifi_iface'])
+                if not new_mac:
+                    self.clean.die("Failed to generate new MAC address")
+
+                self.config['mac'] = new_mac
+
+            # Update configuration with new interface and MAC
+            self.config['wifi_iface'] = self.config['vwifi_iface']
+
+        except subprocess.CalledProcessError as e:
+            self.clean.die(f"Failed to create virtual interface: {str(e)}")
+        except Exception as e:
+            self.clean.die(f"Error during virtual interface creation: {str(e)}")
 
     def _get_channels_(self) -> bool:
         adapter_info = self.get_adapter_info()
@@ -960,6 +1004,8 @@ class ApManager:
 
         print(f"Starting hotspot with SSID: {self.config['ssid']}")
 
+        return self._ap_init_()
+
         if self.config['mode'] == 'nmcli':
             success = self.setup_nmcli_hotspot()
             if success:
@@ -975,6 +1021,7 @@ class ApManager:
     def stop_hotspot(self):
         """Stop the hotspot using appropriate network management tools."""
         print(f"Stopping {self.config['vwifi_iface']}...")
+        return self.clean.clean_exit("Stopping ap manager...")
 
         try:
             if self.config['mode'] == 'nmcli':
@@ -1144,15 +1191,17 @@ class ApManager:
     def alloc_new_iface(self, prefix=None):
         """Allocate a new interface name"""
         prefix = prefix if prefix else self.config['wifi_iface']
-        COMMON_CONFDIR = self.config['common_conf_dir'] or config_manager.__bconfdir__
+        # if interface is say wlan0 use wlan as the prefix
+        if prefix.split('')[-1].isnumeric():
+            prefix = prefix.rsplit('', 1)[0]
         i = 0
         self.lock.mutex_lock()
         try:
             while True:
                 iface_name = f"{prefix}{i}"
-                if not self.is_interface(iface_name) and not os.path.exists(f"{COMMON_CONFDIR}/ifaces/{iface_name}"):
-                    os.makedirs(f"{COMMON_CONFDIR}/ifaces", exist_ok=True)
-                    with open(f"{COMMON_CONFDIR}/ifaces/{iface_name}", 'w'):
+                if not self.is_interface(iface_name) and not os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}"):
+                    os.makedirs(f"{self.conf_dir}/ifaces", exist_ok=True)
+                    with open(f"{self.conf_dir}/ifaces/{iface_name}", 'w'):
                         pass  # Just create the file
                     self.lock.mutex_unlock()
                     return iface_name
@@ -1163,17 +1212,21 @@ class ApManager:
     def dalloc_iface(self, iface=None):
         """Allocate a new interface name"""
         prefix = iface if iface else self.config['wifi_iface']
-        COMMON_CONFDIR = self.config['common_conf_dir'] or config_manager.__bconfdir__
+        # if interface is say wlan0 use wlan as the prefix
+        if prefix.split('')[-1].isnumeric():
+            prefix = prefix.rsplit('', 1)[0]
+
         i = 0
         self.lock.mutex_lock()
         try:
-            iface_name = f"{prefix}{i}"
-            if not self.is_interface(iface_name) and not os.path.exists(f"{COMMON_CONFDIR}/ifaces/{iface_name}"):
-                os.remove(f"{COMMON_CONFDIR}/ifaces/{iface_name}")
+            while True:
+                iface_name = f"{prefix}{i}"
+                if not self.is_interface(iface_name) and not os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}"):
+                    os.remove(f"{self.conf_dir}/ifaces/{iface_name}")
 
-                self.lock.mutex_unlock()
-                return iface_name
-            i += 1
+                    self.lock.mutex_unlock()
+                    return iface_name
+                i += 1
         finally:
             self.lock.mutex_unlock()
 
@@ -1224,21 +1277,24 @@ class ApManager:
 
             return bool(channel_info)
 
-    def can_be_ap(self):
+    def can_be_ap(self, iface=None):
         # iwconfig does not provide this information, assume true
+        iface = iface if iface else self.config['wifi_iface']
         if self.use_iwconfig:
             return True
 
-        adapter_info = self.get_adapter_info()
-        if re.search(r'{\s*AP\s*}', adapter_info):
+        adapter_info = self.get_adapter_info(iface)
+        match = re.search(r'#{\s*AP\s?}?', adapter_info)
+        if bool(match):
             return True
 
         return False
 
     def can_be_sta_and_ap(self, iface=None):
         # iwconfig does not provide this information, assume false
-        if self.use_iwconfig:
-            return False
+        iface = iface if iface else self.config['wifi_iface']
+        # if self.use_iwconfig:
+        # return False
 
         if self.get_adapter_kernel_module(iface) == "brcmfmac":
             warning = """WARN: brmfmac driver doesn't work properly with virtual interfaces and
@@ -1250,7 +1306,7 @@ class ApManager:
 
         # Check if adapter supports both STA and AP modes
         adapter_info = self.get_adapter_info()
-        if re.search(r'{\s*managed\s*AP\s*}', adapter_info) or re.search(r'{\s*AP\s*managed\s*}', adapter_info):
+        if re.search(r'#{\s*managed\s*}\s*<?=?\s*[1-9]?\s*,?\s*#{\s*AP,\s*', adapter_info) or re.search(r'{\s*AP\s*managed\s*}', adapter_info):
             return True
 
         return False
@@ -1259,11 +1315,11 @@ class ApManager:
         iface = _iface if _iface else self.config['wifi_iface']
         module_path = os.path.realpath(f"/sys/class/net/{iface}/device/driver/module")
         module_name = os.path.basename(module_path)
-        print(module_name)
+        # print(module_path, module_name)
         return module_name
 
     def get_adapter_info(self, iface=None) -> str:
-        iface = _iface if _iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['wifi_iface']
 
         PHY = self.get_phy_device(iface)
         if not PHY:
@@ -1371,11 +1427,11 @@ class ApManager:
                             show_warn = False
                     elif not self.is_haveged_running():
                         print("Low entropy detected, starting haveged")
-                       self.mutex_lock()
+                        self.mutex_lock()
                         try:
                             # Start haveged with a specific PID file
                             subprocess.Popen(['haveged', '-w', '1024', '-p',
-                                            os.path.join(COMMON_CONFDIR, 'haveged.pid')])
+                                              os.path.join(self.conf_dir, 'haveged.pid')])
                         finally:
                             self.mutex_unlock()
             except (IOError, ValueError):
@@ -1387,7 +1443,7 @@ class ApManager:
         """Check if haveged is installed"""
         try:
             subprocess.run(['which', 'haveged'],
-                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -1396,14 +1452,14 @@ class ApManager:
         """Check if haveged is running (HAVE GEnerated Daemon)"""
         try:
             subprocess.run(['pidof', 'haveged'],
-                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
             return False
 
-    def start_haveged_watchdog():
+    def start_haveged_watchdog(self):
         """Start the haveged watchdog in a background thread"""
-        thread = Thread(target=haveged_watchdog, daemon=True)
+        thread = Thread(target=self.haveged_watchdog, daemon=True)
         thread.start()
         return thread
 
@@ -1526,8 +1582,8 @@ class ApManager:
         """Check if there are any running instances."""
         self.mutex_lock()
         try:
-            for proc_dir in os.listdir(self.proc_dir):
-                pid_file = os.path.join(self.proc_dir, proc_dir)
+            for proc_item in os.listdir(self.proc_dir):
+                pid_file = os.path.join(self.proc_dir, proc_item)
                 if os.path.exists(pid_file):
                     with open(pid_file, 'r') as f:
                         pid = f.read().strip()
@@ -1545,6 +1601,55 @@ class ApManager:
                 return True
         return False
 
+    def list_running_conf(self) -> List[str]:
+        """List all running configuration directories."""
+        self.lock.mutex_lock()
+
+        try:
+            running_confs = []
+            for item in os.listdir(self.conf_dir):
+                # all instance files have ap_manager prefix
+                if item.endswith('.json') or 'ap_manager' not in item:
+                    continue  # Skip json configs
+                pid_file = os.path.join(self.proc_dir, item)
+                wifi_iface_file = os.path.join(self.conf_dir, item.strip('.pid'), 'wifi_iface')
+
+                if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
+                    with open(pid_file, 'r') as f:
+                        pid = f.read().strip()
+                    if os.path.exists(f'/proc/{pid}'):
+                        running_confs.append(os.path.join(self.conf_dir, item))  # Append the interface conf item
+            return running_confs
+        finally:
+            self.lock.mutex_unlock()
+
+    def list_running(self) -> List[str]:
+        """List all running instances with their interfaces."""
+        self.lock.mutex_lock()
+        try:
+            running_instances = []
+            for conf in self.list_running_conf():
+                iface = os.path.basename(conf)
+                pid_file = os.path.join(self.proc_dir, iface)
+                iface_file = os.path.join(conf, conf.strip('.pid'), 'wifi_iface')
+
+                pid = None
+                if os.path.exists(pid_file):
+                    with open(pid_file, 'r') as f:
+                        pid = f.read().strip()
+
+                if os.path.exists(iface_file):
+                    with open(os.path.join(conf, 'wifi_iface'), 'r') as f:
+                        wifi_iface = f.read().strip()
+
+                if (iface and wifi_iface) and iface == wifi_iface:
+                    running_instances.append(f"{pid} {iface} ({wifi_iface})")
+                # else:
+                # running_instances.append(f"{pid} {iface} ({wifi_iface})")
+            return running_instances
+        finally:
+            self.lock.mutex_unlock()
+
     def send_stop(self, pid_or_iface: str) -> None:
         """Send stop signal to a specific instance."""
         self.mutex_lock()
@@ -1561,42 +1666,3 @@ class ApManager:
                     os.kill(int(parts[0]), signal.SIGUSR1)
         finally:
             self.mutex_unlock()
-
-    def list_running_conf(self) -> List[str]:
-        """List all running configuration directories."""
-        self.lock.mutex_lock()
-
-        try:
-            running_confs = []
-            for conf_dir in os.listdir(self.conf_dir):
-                pid_file = os.path.join(self.conf_dir, proc_dir)
-                wifi_iface_file = os.path.join(self.conf_dir, conf_dir, 'wifi_iface')
-
-                if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
-                    with open(pid_file, 'r') as f:
-                        pid = f.read().strip()
-                    if os.path.exists(f'/proc/{pid}'):
-                        running_confs.append(pid_file)
-            return running_confs
-        finally:
-            self.lock.mutex_unlock()
-
-    def list_running(self) -> List[str]:
-        """List all running instances with their interfaces."""
-        self.lock.mutex_lock()
-        try:
-            running_instances = []
-            for conf_dir in self.list_running_conf():
-                iface = os.path.basename(conf_dir)
-                with open(os.path.join(conf_dir, 'pid'), 'r') as f:
-                    pid = f.read().strip()
-                with open(os.path.join(conf_dir, 'wifi_iface.pid'), 'r') as f:
-                    wifi_iface = f.read().strip()
-
-                if iface == wifi_iface:
-                    running_instances.append(f"{pid} {iface}")
-                else:
-                    running_instances.append(f"{pid} {iface} ({wifi_iface})")
-            return running_instances
-        finally:
-            self.lock.mutex_unlock()

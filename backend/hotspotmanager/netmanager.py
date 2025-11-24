@@ -13,7 +13,7 @@ class NetworkManager:
         self.ADDED_UNMANAGED = set()
         self.NETWORKMANAGER_CONF = "/etc/NetworkManager/NetworkManager.conf"
         self.lock = lock
-        self.ap_man
+        self.ap_man = ap_man
 
     def _get_interface_freq_(self, iface=None) -> float:
         iface = iface if iface else self.ap_man.config['wifi_iface']

@@ -27,6 +27,9 @@ class SignalHandler:
         elif signum == signal.SIGUSR2:
             self.die()
 
+    def cleanup(self):
+        """To be implemented"""
+
     def clean_exit(self, message: Optional[str] = None):
         """Handle clean exits."""
         if message:
@@ -54,7 +57,7 @@ class SignalHandler:
 
         # Send die signal to the main process if not the main process
         if os.getpid() != os.getppid():
-            os.kill(os.getppid(), signal.SIGUSR2)
+            pass  # os.kill(os.getppid(), signal.SIGUSR2)
 
         # Restore original signal handlers
         signal.signal(signal.SIGINT, self.original_sigint_handler)

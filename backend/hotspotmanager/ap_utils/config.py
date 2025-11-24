@@ -6,9 +6,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 class ConfigManager:
-    def __init__(self, config_file: dict = BASE_DIR / 'config/config.json'):
+    def __init__(self, config_file: Path = Path('/etc/ap_manager/conf/config.json')):
         self.config_file = config_file
-        self.config = {}
+        self.config = self.load_config()
+        self.config_dir = config_file.parent or self.config.get('conf_dir', '')
 
     def __enter__(self):
         # Ensure we are using update config
@@ -62,7 +63,7 @@ class ConfigManager:
 
     @property
     def __bconfdir__(self):
-        return BASE_DIR / 'config'
+        return self.config_dir
 
     def is_config_opt(self, opt: str) -> bool:
         """Check if an option is a valid configuration option."""

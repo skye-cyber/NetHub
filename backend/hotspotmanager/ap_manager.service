@@ -1,12 +1,15 @@
 [Unit]
-Description=Custom Hotspot Service
+Description=Create AP manager Service
 After=network.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/path/to/ap_manager.sh start
-ExecStop=/path/to/ap_manager.sh stop
+ExecStart=/usr/bin/ap_manager.sh start --config /etc/ap_manager/conf/config.json
+ExecStop=/usr/bin/ap_manager.sh stop
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
 User=root
 
 [Install]

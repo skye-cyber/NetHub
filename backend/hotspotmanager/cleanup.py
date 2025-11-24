@@ -3,7 +3,7 @@ import sys
 import signal
 import subprocess
 import shutil
-from typing import List, Optional
+from typing import Optional
 from signals import SignalHandler
 
 
@@ -16,8 +16,8 @@ class CleanupManager(SignalHandler):
         self.netmanager = self.ap_man.netmanager
 
         # Conf file config
-        self.common_conf_dir = self.config['common_conf_dir'] or "/etc/ap_manager/conf"
-        self.conf_dir = self.config['proc_dir'] or "/etc/ap_manager/proc"
+        self.conf_dir = self.config['conf_dir'] or "/etc/ap_manager/conf"
+        self.proc_dir = self.config['proc_dir'] or "/etc/ap_manager/proc"
         self.internet_iface = self.config.get('internet_iface', '')
         self.wifi_iface = self.config.get('wifi_iface', '')
         self.vwifi_iface = self.config.get('vwifi_iface', '')
@@ -59,19 +59,21 @@ class CleanupManager(SignalHandler):
                     pass
 
             # Kill processes from PID files
-            if os.path.exists(self.conf_dir):
-                for pid_file in os.listdir(self.conf_dir):
+            if os.path.exists(self.proc_dir):
+                for pid_file in os.listdir(self.proc_dir):
                     if pid_file.endswith('.pid'):
-                        pid_path = os.path.join(self.conf_dir, pid_file)
+                        pid_path = os.path.join(self.proc_dir, pid_file)
                         try:
                             with open(pid_path, 'r') as f:
                                 pid = int(f.read().strip())
                             os.kill(pid, signal.SIGKILL) if pid else None
+                            # remove the pid file
+                            os.remove(pid_path)
                         except (IOError, ValueError, OSError):
                             pass
 
-                # Remove the configuration directory
-                shutil.rmtree(self.conf_dir, ignore_errors=True)
+                # Remove the proccesses directory
+                # shutil.rmtree(self.proc_dir, ignore_errors=True)
 
             # Check if we're the last instance using this internet interface
             found = False
@@ -85,7 +87,7 @@ class CleanupManager(SignalHandler):
 
             if not found and self.internet_iface:
                 # Restore original forwarding setting
-                forwarding_file = os.path.join(self.common_conf_dir, f"{self.internet_iface}_forwarding")
+                forwarding_file = os.path.join(self.conf_dir, f"{self.internet_iface}_forwarding")
                 if os.path.exists(forwarding_file):
                     with open(forwarding_file, 'r') as src, open(f"/proc/sys/net/ipv4/conf/{self.internet_iface}/forwarding", 'w') as dst:
                         shutil.copyfileobj(src, dst)
@@ -94,26 +96,27 @@ class CleanupManager(SignalHandler):
             # If we're the last instance, restore common settings
             if not self.has_running_instance():
                 # Kill common processes
-                if os.path.exists(self.common_conf_dir):
-                    for pid_file in os.listdir(self.common_conf_dir):
+                if os.path.exists(self.proc_dir):
+                    for pid_file in os.listdir(self.proc_dir):
                         if pid_file.endswith('.pid'):
-                            pid_path = os.path.join(self.common_conf_dir, pid_file)
+                            pid_path = os.path.join(self.conf_dir, pid_file)
                             try:
                                 with open(pid_path, 'r') as f:
                                     pid = int(f.read().strip())
                                 os.kill(pid, signal.SIGKILL)
+                                os.remove(pid_file)
                             except (IOError, ValueError, OSError):
                                 pass
 
                 # Restore original ip_forward setting
-                ip_forward_file = os.path.join(self.common_conf_dir, 'ip_forward')
+                ip_forward_file = os.path.join(self.conf_dir, 'ip_forward')
                 if os.path.exists(ip_forward_file):
                     with open(ip_forward_file, 'r') as src, open('/proc/sys/net/ipv4/ip_forward', 'w') as dst:
                         shutil.copyfileobj(src, dst)
                     os.remove(ip_forward_file)
 
                 # Restore original bridge-nf-call-iptables setting
-                bridge_nf_file = os.path.join(self.common_conf_dir, 'bridge-nf-call-iptables')
+                bridge_nf_file = os.path.join(self.conf_dir, 'bridge-nf-call-iptables')
                 if os.path.exists(bridge_nf_file):
                     if os.path.exists('/proc/sys/net/bridge/bridge-nf-call-iptables'):
                         with open(bridge_nf_file, 'r') as src, \
@@ -122,7 +125,7 @@ class CleanupManager(SignalHandler):
                     os.remove(bridge_nf_file)
 
                 # Remove common configuration directory
-                shutil.rmtree(self.common_conf_dir, ignore_errors=True)
+                # shutil.rmtree(self.conf_dir, ignore_errors=True)
 
             # Cleanup based on sharing method
             if self.share_method != 'none':
@@ -130,19 +133,19 @@ class CleanupManager(SignalHandler):
                     # Remove NAT rules
                     subprocess.run([
                         'iptables', '-w', '-t', 'nat', '-D', 'POSTROUTING',
-                        '-s', f"{self.gateway.split('.')[0]}.{self.gateway.split('.')[1]}.{self.gateway.split('.')[2]}.0/24",
+                        '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
                         '!', '-o', self.wifi_iface, '-j', 'MASQUERADE'
                     ], check=False)
                     subprocess.run([
                         'iptables', '-w', '-D', 'FORWARD',
                         '-i', self.wifi_iface,
-                        '-s', f"{self.gateway.split('.')[0]}.{self.gateway.split('.')[1]}.{self.gateway.split('.')[2]}.0/24",
+                        '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
                         '-j', 'ACCEPT'
                     ], check=False)
                     subprocess.run([
                         'iptables', '-w', '-D', 'FORWARD',
                         '-i', self.internet_iface,
-                        '-d', f"{self.gateway.split('.')[0]}.{self.gateway.split('.')[1]}.{self.gateway.split('.')[2]}.0/24",
+                        '-d', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
                         '-j', 'ACCEPT'
                     ], check=False)
                 elif self.share_method == 'bridge':
@@ -189,14 +192,14 @@ class CleanupManager(SignalHandler):
                 ], check=False)
                 subprocess.run([
                     'iptables', '-w', '-t', 'nat', '-D', 'PREROUTING',
-                    '-s', f"{self.gateway.split('.')[0]}.{self.gateway.split('.')[1]}.{self.gateway.split('.')[2]}.0/24",
+                    '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
                     '-d', self.gateway,
                     '-p', 'tcp', '-m', 'tcp', '--dport', '53',
                     '-j', 'REDIRECT', '--to-ports', str(self.dns_port)
                 ], check=False)
                 subprocess.run([
                     'iptables', '-w', '-t', 'nat', '-D', 'PREROUTING',
-                    '-s', f"{self.gateway.split('.')[0]}.{self.gateway.split('.')[1]}.{self.gateway.split('.')[2]}.0/24",
+                    '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
                     '-d', self.gateway,
                     '-p', 'udp', '-m', 'udp', '--dport', '53',
                     '-j', 'REDIRECT', '--to-ports', str(self.dns_port)
