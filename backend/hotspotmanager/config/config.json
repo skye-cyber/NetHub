@@ -31,12 +31,18 @@
   "no_haveged": false,
   "no_dnsmasq": false,
   "dhcp_dns": false,
-  "dhcp_hosts": "",
+  "dhcp_hosts": [],
+  "addn_hosts": [],
+  "etc_hosts": [],
   "daemon": false,
+  "dns_logfile": "",
   "logfile": "",
   "base_dir": "/etc/ap_manager",
   "pidfile": "/etc/ap_manager/proc/daemon.pid",
   "ip_addrs": [],
   "common_conf_dir": "/etc/ap_manager/conf",
-  "proc_dir": "/etc/ap_manager/proc"
+  "proc_dir": "/etc/ap_manager/proc",
+  "hostapd_timestamps": false,
+  "hostapd_debug": 0,
+  "redirect_to_localhost": false
 }

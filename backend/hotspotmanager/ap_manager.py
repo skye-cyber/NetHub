@@ -42,7 +42,7 @@ class ApManager:
 
         # all new files and directories must be readable only by root.
         # in special cases we must use chmod to give any other permissions.
-        # self.SCRIPT_UMASK = "0077"
+        self.SCRIPT_UMASK = "0077"
 
         # lock file for the mutex counter
         self.COUNTER_LOCK_FILE = f"/tmp/ap_manager.{os.getpid()}.lock"
@@ -63,6 +63,7 @@ class ApManager:
         self.proc_dir = self.config['proc_dir']
         self.conf_dir = self.config['proc_dir']
         self.iface_dir = os.path.join(self.config['base_dir'], 'ifaces')
+        self.virt_diems = "Maybe your WiFi adapter does not fully support virtual interfaces. Try again with --no-virt."
 
     def __enter__(self):
         self.config = config_manager.get_config
@@ -77,7 +78,7 @@ class ApManager:
             tmpf.write(os.getpid())
 
         # to make --list-running work from any user, we must give read
-        # permissions to $CONFDIR and $CONFDIR/pid
+        # permissions to conf_dir and conf_dir/pid
         os.chown(conf_dir, '755')
         os.chown(tmpf, '444')
 
@@ -143,10 +144,255 @@ class ApManager:
         if self.config['isolate_clients']:
             print("Access Point's clients will be isolated!")
 
-        self.hostapd_config()
-        # setup dnsmasq ...
+        self.config_hostapd()
+        self.config_dnsmaq()
+        self.init_wifi_iface()
+        self.enable_internet_sharing()
+        self.start_dhcp_dns()
+        self.start_ap()
+        self.start_hostapd()
+        self.clean.clean_exit("Success")
 
-    def hostapd_config(self):
+    def start_ap(self):
+        print(f"hostapd command-line interface: hostapd_cli -p {self.conf_dir}/hostapd_ctrl")
+        if self.config['no_haveged']:
+            self.haveged_watchdog()
+            # HAVEGED_WATCHDOG_PID =
+
+    def enable_internet_sharing(self):
+        # enable Internet sharing
+        if self.config['share_method'] != 'none':
+            print(f"Sharing Internet using method: {self.config['share_method']}")
+            if self.config['share_method'] == "nat":
+                if subprocess.run(['iptables', '-w', '-t', 'nat', '-I', 'POSTROUTING', '-s', f"{self.config['gateway']:.*}.0/24", '!', '-o', self.config['wifi_iface'], '-j', 'MASQUERADE'], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+
+                if subprocess.run(['iptables', '-w', '-I', 'FORWARD', '-i', self.config['wifi_iface'], '-s', f"{self.config['gateway']:.*}.0/24", '-j', 'ACCEPT'], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+
+                if subprocess.run(['iptables', '-w', '-I', 'FORWARD', '-i', self.config['internet_iface'], '-d', f"{self.config['gateway']:.*}.0/24", '-j', 'ACCEPT'], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+
+                try:
+                    with open(f"/proc/sys/net/ipv4/conf/{self.config['internet_iface']}/forwarding", 'w') as f:
+                        f.write(1)
+                    with open("/proc/sys/net/ipv4/ip_forward", 'w') as f:
+                        f.write(1)
+                except IOError:
+                    sys.exit("Could not write file")
+                except Exception:
+                    sys.exit(1)
+
+                # to enable clients to establish PPTP connections we must
+                # load nf_nat_pptp module
+                subprocess.run(['modprobe', 'nf_nat_pptp'])
+            if self.config['share_method'] == "bridge":
+                # disable iptables rules for bridged interfaces
+                if os.path.exists("/proc/sys/net/bridge/bridge-nf-call-iptables"):
+                    with open("/proc/sys/net/bridge/bridge-nf-call-iptables", 'w') as f:
+                        f.write(0)
+
+                """ to initialize the bridge interface correctly we need to do the following:
+
+                 1) save the IPs and route table of INTERNET_IFACE
+                 2) if NetworkManager is running set INTERNET_IFACE as unmanaged
+                 3) create BRIDGE_IFACE and attach INTERNET_IFACE to it
+                 4) set the previously saved IPs and route table to BRIDGE_IFACE
+
+                 we need the above because BRIDGE_IFACE is the master interface from now on
+                 and it must know where is connected, otherwise connection is lost.
+                """
+                if self.is_bridge_interface(self.config['internet_iface']):
+                    print("Create a bridge interface... ")
+                    old_ifaces = None
+                    IP_ADDRS = re.search(r'inet\s([1-9]+(.?[1-9]+)+)', subprocess.run(['ip', 'addr', 'show', self.config['internet_iface']], check=True, capture_output=True, text=True).stdout)
+                    ROUTE_ADDRS = subprocess.run(['ip', 'route', 'show', 'dev', self.config['internet_iface']], check=True, capture_output=True, text=True).stdout
+                    if self.netmanager.networkmanager_is_running():
+                        self.netmanager.networkmanager_add_unmanaged(self.config['internet_iface'])
+                        self.netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
+                    # create bridge interface
+                    if subprocess.run(['ip', 'link', 'add', 'name', self.config['bridge_iface'], 'type', 'bridge'], check=True, capture_output=True, text=True).returncode != 0:
+                        sys.exit(1)
+                    if subprocess.run(['ip', 'link', 'set', 'dev', self.config['bridge_iface'], 'up'], check=True, capture_output=True, text=True).returncode != 0:
+                        sys.exit(1)
+                    # set 0ms forward delay
+                    with open(f"/sys/class/net/{self.config['bridge_iface']}/bridge/forward_delay", 'w') as f:
+                        f.write(0)
+
+                    # attach internet interface to bridge interface
+                    if subprocess.run(['ip', 'link', 'set', 'dev', self.config['internet_iface'], 'promisc', 'on'], check=True, capture_output=True, text=True).returncode != 0:
+                        sys.exit(1)
+                    if subprocess.run(['ip', 'link', 'set', 'dev', self.config['internet_iface'], 'up'], check=True, capture_output=True, text=True).returncode != 0:
+                        sys.exit(1)
+                    if subprocess.run(['ip', 'link', 'set', 'dev', self.config['internet_iface'], 'master', self.config['bridge_iface']], check=True, capture_output=True, text=True).returncode != 0:
+                        sys.exit(1)
+
+                    subprocess.run(['ip', 'addr', 'flush', self.config['internet_iface']], check=True, capture_output=True, text=True)
+
+                    for x in IP_ADDRS:
+                        x = f"{x}/inet/"
+                        x = f"{x}/secondary/"
+                        x = f"{x}/dynamic/"
+                        x = re.search(r's/\([0-9]\)sec/\1/g', x)
+                        x = f"{x}/{self.config['internet_iface']}/"
+
+                        if subprocess.run(['ip', 'addr', 'add', x, 'dev', self.config['bridge_iface']]).returncode != 0:
+                            sys.exit(1)
+
+                    # remove any existing entries that were added from 'ip addr add'
+                    subprocess.run(['ip', 'route', 'flush', 'dev', self.config['internet_iface']], check=True, capture_output=True, text=True)
+                    subprocess.run(['ip', 'route', 'flush', 'dev', self.config['bridge_iface']], check=True, capture_output=True, text=True)
+
+                    # we must first add the entries that specify the subnets and then the
+                    # gateway entry, otherwise 'ip addr add' will return an error
+                    for x in ROUTE_ADDRS:
+                        if 'default' in x:
+                            continue
+                        if subprocess.run(['ip', 'route', 'add', x, 'dev', self.config['bridge_iface']]).returncode != 0:
+                            sys.exit(0)
+                    for x in ROUTE_ADDRS:
+                        if 'default' not in x:
+                            continue
+                        if subprocess.run(['ip', 'route', 'add', x, 'dev', self.config['bridge_iface']]).returncode != 0:
+                            sys.exit(0)
+                    print(f"{self.config['bridge_iface']} created")
+        else:
+            print("No Internet sharing")
+
+    def start_hostapd(self):
+        # start hostapd (use stdbuf when available for no delayed output in programs that redirect stdout)
+        res = subprocess.run(['which', 'stdbuf'], check=True, capture_output=True, text=True)
+        STDBUF_PATH = res.stdout if res.returncode == 0 else None
+
+        hostapd = subprocess.run(['stdbuf', '-oL'], check=True, capture_output=True, text=True)
+
+        # get hostapd pid
+        HOSTAPD_PID = os.getppid(hostapd)
+        with open(os.apth.join(self.conf_dir, 'hostapd.pid')) as f:
+            f.write(HOSTAPD_PID)
+
+        print("Error: Failed to run hostapd, maybe a program is interfering.")
+
+        if self.netmanager.networkmanager_is_running():
+            print("If an error like 'n80211: Could not configure driver mode' was thrown, try running the following before starting ap_manager:")
+
+            if self.nm_older_version:
+                print("    nmcli nm wifi off")
+            else:
+                print("    nmcli r wifi off")
+            print("    rfkill unblock wlan")
+
+    def start_dhcp_dns(self):
+        # start dhcp + dns (optional)
+        if self.config['share_method'] != 'bridge':
+            if not self.config['no_dns']:
+                if subprocess.run(['iptables', '-w', '-I', 'INPUT', '-p', 'tcp', '-m', 'tcp', '--dport ', self.config.get('dns_port', 53), '-j', 'ACCEPT'], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+                if subprocess.run(['iptables', '-w', '-I', 'INPUT', '-p', 'udp', '-m', 'udp', '--dport', self.config.get('dns_port', 53), '-j', 'ACCEPT'], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+                if subprocess.run(['iptables', '-w', '-t', 'nat', '-I', 'PREROUTING', '-s', f"{self.config['gateway']:.*}.0/24", '-d', self.config['gateway'], '-p', 'tcp', '-m', 'tcp', '--dport', 53, '-j', 'REDIRECT', '--to-ports', self.config.get('dns_port', 53)], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+                if subprocess.run(['iptables', '-w', '-t', 'nat', '-I', 'PREROUTING', '-s' f"{self.config['gateway']:.*}.0/24", '-d', self.config['gateway'], '-p', 'udp', '-m', 'udp', '--dport', '53', '-j', 'REDIRECT', '--to-ports', self.config.get('dns_port', 53)], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+
+            if not self.config['no_dnsmasq']:
+                if subprocess.run(['iptables', '-w', '-I', 'INPUT', '-p', 'udp', '-m', 'udp', '--dport', 67, '-j', 'ACCEPT'], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+
+                # apparmor does not allow dnsmasq to read files.
+                # remove restriction.
+                COMPLAIN_CMD = ['command', '-v', 'complain'] if subprocess.run(['command', '-v', 'complain'], check=True, capture_output=True, text=True).stdout else ['command', '-v', 'aa-complain'] if subprocess.run(['command', '-v', 'complain'], check=True, capture_output=True, text=True).stdout else None
+
+                if COMPLAIN_CMD:
+                    subprocess.run(COMPLAIN_CMD.append('dnsmasq'), check=True, capture_output=True, text=True)
+
+                os.umask(0o033)
+                if subprocess.run(['dnsmasq', '-C', os.path.join(self.conf_dir, 'dnsmasq.conf'), '-x', os.path.join(self.conf_dir, 'dnsmasq.pid'), '-l', os.path.join(self.conf_dir, 'dnsmasq.lease'), '-p', self.config['dns_port']], check=True, capture_output=True, text=True).returncode != 0:
+                    sys.exit(1)
+
+                os.umask(self.SCRIPT_UMASK)
+
+    def init_wifi_iface(self):
+        # initialize WiFi interface
+        if not self.config['no_virt'] and self.config['mac']:
+            if subprocess.run(['ip', 'link', 'set', 'dev', self.config['wifi_iface'], 'address', self.config['mac']], check=True, capture_output=True, text=True).returncode != 0:
+                sys.exit(self.virt_diems)
+
+        if subprocess.run(['ip', 'link', 'set', 'down', 'dev', self.config['wifi_iface']], check=True, capture_output=True, text=True).returncode != 0:
+            sys.exit(self.virt_diems)
+
+        if subprocess.run(['ip', 'addr', 'flush', self.config['wifi_iface']], check=True, capture_output=True, text=True).returncode != 0:
+            sys.exit(self.virt_diems)
+
+        if self.config['no_virt'] and self.config['mac']:
+            if subprocess.run(['ip', 'link', 'set', 'dev', self.config['wifi_iface'], 'address', self.config['mac']], check=True, capture_output=True, text=True).returncode != 0:
+                sys.exit(self.virt_diems)
+
+        if self.config['share_method'] != 'bridge':
+            if subprocess.run(['ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']], check=True, capture_output=True, text=True).returncode != 0:
+                sys.exit(self.virt_diems)
+            if subprocess.run(['ip', 'addr', 'add', f"{self.config['gateway']}/24", 'broadcast', f"{self.config['gateway']:.*}.255", 'dev', self.config['wifi_iface']], check=True, capture_output=True, text=True).returncode != 0:
+                sys.exit(self.virt_diems)
+        return True
+
+    def config_dnsmaq(self):
+        if not self.config['no_dnsmasq']:
+            # setup dnsmasq config (dhcp + dns)
+            dnsmasq_info = subprocess.run(['dnsmasq', '-v'], check=True, capture_output=True, text=True)
+            if not dnsmasq_info.returncode == 0:
+                sys.exit("DNSMASQ not installed")
+
+            dnsmasq_version = re.search(r'[0-9]+(\.[0-9]+)*\.[0-9]+', dnsmasq_info.stdout).group(0)
+            cmp_res = self.netmanager.version_cmp(dnsmasq_version, '2.63')
+
+            if res == 1:
+                dnsmasq_bind = 'bind-interfaces'
+            else:
+                dnsmasq_bind = 'bind-dynamic'
+            if self.config['dhcp_dns'] == 'gateway':
+                dhcp_dns = 'gateway'
+
+            mtu = self.get_mtu(self.config['internet_iface'])
+
+            with open(os.path.join(self.conf_dir, 'dnsmasq.conf'), 'w') as f:
+                f.write(
+                    (
+                        f"listen-address={self.config['gateway']}\n"
+                        f"{dnsmasq_bind}\n"
+                        f"dhcp-range={self.config['gateway']:.*}.1,{self.config['gateway']:.*}.254,255.255.255.0,24h\n"
+                        f"dhcp-option-force=option:router,{self.config['gateway']}\n"
+                        f"dhcp-option-force=option:dns-server,{','.join(self.config['dhcp_dns']).strip()}\n" if (self.config['dhcp_dns'] == 'gateway' and len(self.config['dhcp_dns']) > 0) else ''
+                    ).strip()
+                )
+
+                if not self.config['etc_hosts'] or len(self.config['etc_hosts']) > 0:
+                    f.write((
+                        'no-hosts\n'
+                    ))
+                if len(self.config['addn_hosts']) > 0:
+                    f.write((
+                        f"addn-hosts={','.join(self.config['addn_hosts']).strip()}\n"
+                    ))
+                if mtu:
+                    f.write((
+                        f"dhcp-option-force=option:mtu,{mtu}\n"
+                    ))
+                if self.config['dhcp_hosts'] and len(self.config['dhcp_hosts']) > 0:
+                    f.write((
+                        '\n'.join(f"dhcp-host={host}" for host in self.config['dhcp_hosts']).strip()
+                    ))
+                if self.config['dns_logfile']:
+                    f.write((
+                        "log-queries\n"
+                        f"log-facility={self.config['dns_logfile']}\n"
+                    ))
+                if self.config['share_method'] == 'none' and self.config['redirect_to_localhost']:
+                    f.write((
+                        f"address=/#/{self.config['gateway']}"
+                    ))
+        return True
+
+    def config_hostapd(self):
         # hostapd config
         config = (
             "beacon_int=100\n"
@@ -232,6 +478,7 @@ class ApManager:
                     f.write((
                         f"bridge={self.config['bridge_iface']}"
                     ))
+        return True
 
     def make_unmanaged(self):
         if self.netmanager.networkmanager_exists() and self.netmanager.networkmanager_iface_is_unmanaged(self.config['wifi_iface']):
@@ -278,7 +525,7 @@ class ApManager:
             if self.netmanager.networkmanager_is_running() and self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
                 print(f"{self.config['wifi_iface']} created")
         else:
-            sys.exit("Maybe your WiFi adapter does not fully support virtual interfaces. Try again with --no-virt.")
+            sys.exit(self.virt_diems)
 
         old_mac = self.get_macaddr(self.config['vwifi_iface'])
         new_mac = self.config['mac']
@@ -565,7 +812,7 @@ class ApManager:
         except IOError:
             return None
 
-    def get_mtu(self, iface=None):
+    def get_mtu(self, iface=None) -> int:
         """Get MTU of an interface"""
         iface = iface if iface else self.config['wifi_iface']
 
