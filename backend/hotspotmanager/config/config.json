@@ -9,7 +9,7 @@
   "wifi_iface": "wlan0",
   "vwifi_iface": "xap0",
   "bridge_iface": "xbr0",
-  "dns_port": 53,
+  "dns_port": 5353,
   "share_method": "nat",
   "internet_iface": "eth0",
   "psk": "randompresharedkeyrandompresharedkeyrandompresharedkeyrandompresharedkey",
@@ -42,6 +42,7 @@
   "ip_addrs": [],
   "common_conf_dir": "/etc/ap_manager/conf",
   "proc_dir": "/etc/ap_manager/proc",
+  "hostapd_path": "/usr/sbin/hostapd",
   "hostapd_timestamps": false,
   "hostapd_debug": 0,
   "redirect_to_localhost": false
