@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Installation script for Custom Hotspot Manager
+# Installation script for AP Manager
 
 set -e
 # Colors for output
