@@ -5,7 +5,8 @@ from typing import Optional
 
 
 class SignalHandler:
-    def __init__(self, config):
+    def __init__(self, config=None):
+        self.config = config
         self.setup_signal_handlers()
 
     def setup_signal_handlers(self):
@@ -60,9 +61,12 @@ class SignalHandler:
             pass  # os.kill(os.getppid(), signal.SIGUSR2)
 
         # Restore original signal handlers
-        signal.signal(signal.SIGINT, self.original_sigint_handler)
-        signal.signal(signal.SIGUSR1, self.original_sigusr1_handler)
-        signal.signal(signal.SIGUSR2, self.original_sigusr2_handler)
+        try:
+            signal.signal(signal.SIGINT, self.original_sigint_handler)
+            signal.signal(signal.SIGUSR1, self.original_sigusr1_handler)
+            signal.signal(signal.SIGUSR2, self.original_sigusr2_handler)
+        except Exception:
+            pass
 
         # Perform cleanup
         self.cleanup()

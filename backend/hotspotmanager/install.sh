@@ -33,8 +33,10 @@ cp *.py "$INSTALL_DIR/"
 cp -r config/* "$BASE_DIR/conf/"
 mv "$BASE_DIR/conf/config-bc.json" "$BASE_DIR/.config-bc.json"
 
-# Modify permision
-chown 777 $BASE_DIR -R
+# Set proper permissions
+chmod 755 "$BASE_DIR" -R
+chmod +x "$INSTALL_DIR"/*.sh
+chmod +x "$INSTALL_DIR"/*.py
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/ap_manager.py"

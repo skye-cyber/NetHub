@@ -9,6 +9,9 @@ class LockManager:
         self.COUNTER_LOCK_FILE = f"/tmp/create_ap.{os.getpid()}.lock"
         self.lock_fd = None
         self.counter_mutex_fd = None
+        
+        # Initialize the lock files
+        self.__init_lock__()
 
     def __init_lock__(self):
         """Initialize the lock file with proper permissions"""
@@ -44,14 +47,12 @@ class LockManager:
 
     def get_avail_fd(self):
         """Get an unused file descriptor"""
-        max_fds = os.sysconf('SC_OPEN_MAX')
-        pid = os.getpid()
-
-        for x in range(3, max_fds):  # Start from 3 to skip stdin, stdout, stderr
-            if not os.path.exists(f"/proc/{pid}/fd/{x}"):
-                return x
-
-        return None  # Return None if no available FD found
+        try:
+            # Use a simple approach - just return a high file descriptor number
+            # This is more reliable than trying to find gaps in /proc
+            return 100  # Start from a high number to avoid conflicts
+        except Exception:
+            return None  # Return None if any error occurs
 
     def cleanup_lock(self):
         """Clean up the lock files"""
@@ -63,13 +64,13 @@ class LockManager:
 
     def mutex_lock(self):
         """Recursive mutex lock for all processes"""
-        # Get a file descriptor for the counter lock
-        self.counter_mutex_fd = self.get_avail_fd()
-        if self.counter_mutex_fd is None:
-            print("Failed to lock mutex counter")
-            return False
-
         try:
+            # Ensure the counter lock file exists
+            if not os.path.exists(self.COUNTER_LOCK_FILE):
+                with open(self.COUNTER_LOCK_FILE, 'w') as f:
+                    f.write('0')
+                os.chmod(self.COUNTER_LOCK_FILE, 0o666)
+
             # Open the counter lock file
             counter_fd = os.open(self.COUNTER_LOCK_FILE, os.O_RDWR)
 
@@ -78,10 +79,15 @@ class LockManager:
 
             # Read the current counter value
             os.lseek(counter_fd, 0, os.SEEK_SET)
-            counter = int(os.read(counter_fd, 1024).decode().strip())
+            counter_data = os.read(counter_fd, 1024).decode().strip()
+            counter = int(counter_data) if counter_data else 0
+
+            # Initialize lock_fd if not already done
+            if not hasattr(self, 'lock_fd') or self.lock_fd is None:
+                self.__init_lock__()
 
             # Lock the global mutex if this is the first lock
-            if counter == 0:
+            if counter == 0 and hasattr(self, 'lock_fd') and self.lock_fd:
                 fcntl.flock(self.lock_fd, fcntl.LOCK_EX)
 
             # Increment the counter
@@ -97,19 +103,17 @@ class LockManager:
             os.close(counter_fd)
 
             return True
-        except (OSError, ValueError):
-            print("Failed to lock mutex counter")
+        except (OSError, ValueError, AttributeError) as e:
+            print(f"Failed to lock mutex counter: {str(e)}")
             return False
 
     def mutex_unlock(self):
         """Recursive mutex unlock for all processes"""
-        # Get a file descriptor for the counter lock
-        self.counter_mutex_fd = self.get_avail_fd()
-        if self.counter_mutex_fd is None:
-            print("Failed to lock mutex counter")
-            return False
-
         try:
+            # Ensure the counter lock file exists
+            if not os.path.exists(self.COUNTER_LOCK_FILE):
+                return True  # Nothing to unlock
+
             # Open the counter lock file
             counter_fd = os.open(self.COUNTER_LOCK_FILE, os.O_RDWR)
 
@@ -118,14 +122,15 @@ class LockManager:
 
             # Read the current counter value
             os.lseek(counter_fd, 0, os.SEEK_SET)
-            counter = int(os.read(counter_fd, 1024).decode().strip())
+            counter_data = os.read(counter_fd, 1024).decode().strip()
+            counter = int(counter_data) if counter_data else 0
 
             # Decrement the counter if it's positive
             if counter > 0:
                 counter -= 1
 
                 # Unlock the global mutex if this is the last unlock
-                if counter == 0:
+                if counter == 0 and hasattr(self, 'lock_fd') and self.lock_fd:
                     fcntl.flock(self.lock_fd, fcntl.LOCK_UN)
 
             # Write the new counter value
@@ -138,8 +143,8 @@ class LockManager:
             os.close(counter_fd)
 
             return True
-        except (OSError, ValueError):
-            print("Failed to lock mutex counter")
+        except (OSError, ValueError, AttributeError) as e:
+            print(f"Failed to unlock mutex counter: {str(e)}")
             return False
 
 

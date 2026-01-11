@@ -9,6 +9,9 @@ from signals import SignalHandler
 
 class CleanupManager(SignalHandler):
     def __init__(self, ap_man):
+        # Initialize SignalHandler with config
+        super().__init__(ap_man.config)
+        
         # Ap man config
         self.ap_man = ap_man
         self.lock = self.ap_man.lock
@@ -49,7 +52,7 @@ class CleanupManager(SignalHandler):
 
         try:
             # Disown all child processes
-            subprocess.run(['disown', '-a'], shell=True)
+            subprocess.run(['which', 'disown'], shell=True)
 
             # Kill haveged_watchdog if running
             if self.haveged_watchdog_pid:
@@ -72,8 +75,12 @@ class CleanupManager(SignalHandler):
                         except (IOError, ValueError, OSError):
                             pass
 
-                # Remove the proccesses directory
-                # shutil.rmtree(self.proc_dir, ignore_errors=True)
+                # Remove the processes directory if empty
+                try:
+                    if os.path.exists(self.proc_dir) and not os.listdir(self.proc_dir):
+                        os.rmdir(self.proc_dir)
+                except OSError:
+                    pass
 
             # Check if we're the last instance using this internet interface
             found = False
@@ -88,9 +95,9 @@ class CleanupManager(SignalHandler):
             if not found and self.internet_iface:
                 # Restore original forwarding setting
                 forwarding_file = os.path.join(self.conf_dir, f"{self.internet_iface}_forwarding")
-                if os.path.exists(forwarding_file):
-                    with open(forwarding_file, 'r') as src, open(f"/proc/sys/net/ipv4/conf/{self.internet_iface}/forwarding", 'w') as dst:
-                        shutil.copyfileobj(src, dst)
+                # if os.path.exists(forwarding_file):
+                with open(forwarding_file, 'r') as src, open(f"/proc/sys/net/ipv4/conf/{self.internet_iface}/forwarding", 'w') as dst:
+                    shutil.copyfileobj(src, dst)
                     os.remove(forwarding_file)
 
             # If we're the last instance, restore common settings
@@ -124,8 +131,12 @@ class CleanupManager(SignalHandler):
                             shutil.copyfileobj(src, dst)
                     os.remove(bridge_nf_file)
 
-                # Remove common configuration directory
-                # shutil.rmtree(self.conf_dir, ignore_errors=True)
+                # Remove common configuration directory if empty
+                try:
+                    if os.path.exists(self.conf_dir) and not os.listdir(self.conf_dir):
+                        os.rmdir(self.conf_dir)
+                except OSError:
+                    pass
 
             # Cleanup based on sharing method
             if self.share_method != 'none':
@@ -238,8 +249,13 @@ class CleanupManager(SignalHandler):
     def cleanup(self):
         """Public cleanup function that provides user feedback."""
         print("\nDoing cleanup...", end=' ', flush=True)
-        self._cleanup()
-        print("done")
+        try:
+            self._cleanup()
+            print("done")
+        except Exception as e:
+            print(f"cleanup failed: {str(e)}")
+            # Still try to do basic cleanup even if main cleanup fails
+            self._basic_cleanup()
 
     def _die_(self, message: Optional[str] = None):
         """Handle fatal errors and exit."""
@@ -249,6 +265,33 @@ class CleanupManager(SignalHandler):
         if os.getpid() != os.getppid():
             os.kill(os.getppid(), signal.SIGUSR2)
         sys.exit(1)
+
+    def _basic_cleanup(self):
+        """Basic cleanup that should always work."""
+        try:
+            # Kill any remaining processes
+            if os.path.exists(self.proc_dir):
+                for pid_file in os.listdir(self.proc_dir):
+                    if pid_file.endswith('.pid'):
+                        pid_path = os.path.join(self.proc_dir, pid_file)
+                        try:
+                            with open(pid_path, 'r') as f:
+                                pid = int(f.read().strip())
+                            os.kill(pid, signal.SIGKILL)
+                            os.remove(pid_path)
+                        except (IOError, ValueError, OSError, ProcessLookupError):
+                            pass
+            
+            # Remove PID files
+            try:
+                if os.path.exists(self.COUNTER_LOCK_FILE):
+                    os.remove(self.COUNTER_LOCK_FILE)
+            except OSError:
+                pass
+                
+            print("basic cleanup completed")
+        except Exception:
+            pass
 
     def _clean_exit_(self):
         """Handle clean exits."""
@@ -260,6 +303,43 @@ class CleanupManager(SignalHandler):
     def has_running_instance(self) -> bool:
         """Check if there are any running instances."""
         return len(self.list_running_conf()) > 0
+
+    def networkmanager_rm_unmanaged_if_needed(self, iface: str, mac: Optional[str] = None) -> bool:
+        """Remove an interface from unmanaged list if needed."""
+        if self.netmanager:
+            return self.netmanager.networkmanager_rm_unmanaged_if_needed(iface, mac)
+        return False
+
+    def dealloc_iface(self, iface: str) -> None:
+        """Deallocate an interface by removing its configuration file."""
+        try:
+            iface_conf = os.path.join(self.conf_dir, 'ifaces', iface)
+            if os.path.exists(iface_conf):
+                os.remove(iface_conf)
+        except OSError:
+            pass
+
+    def list_running_conf(self) -> list:
+        """List all running configuration directories."""
+        running_confs = []
+        try:
+            if os.path.exists(self.conf_dir):
+                for item in os.listdir(self.conf_dir):
+                    # Skip non-ap_manager files
+                    if not item.startswith('ap_manager'):
+                        continue
+                    
+                    # Check if this is a valid running configuration
+                    pid_file = os.path.join(self.proc_dir, item + '.pid') if item else None
+                    wifi_iface_file = os.path.join(self.conf_dir, item, 'wifi_iface') if item else None
+                    
+                    if pid_file and wifi_iface_file:
+                        if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
+                            running_confs.append(os.path.join(self.conf_dir, item))
+        except OSError:
+            pass
+        
+        return running_confs
 
     def _is_bridge_interface_(self, iface: str) -> bool:
         """Check if an interface is a bridge interface."""

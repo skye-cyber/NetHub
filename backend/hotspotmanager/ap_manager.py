@@ -21,6 +21,11 @@ from ap_utils.copy import cp_n_safe
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Check if we're running as root
+if os.geteuid() != 0:
+    print("This script must be run as root")
+    sys.exit(1)
+
 
 class ApManager:
     _instance = None
@@ -75,6 +80,28 @@ class ApManager:
 
         self.virt_diems = "Maybe your WiFi adapter does not fully support virtual interfaces. Try again with --no-virt."
 
+    def run_command(self, cmd, check=True, capture_output=False, text=False):
+        """Run a command with proper error handling and sudo support"""
+        try:
+            # Check if we need sudo for this command
+            privileged_commands = ['iptables', 'ip', 'iw', 'modprobe', 'systemctl', 'nmcli']
+            if any(cmd[0].endswith(priv_cmd) for priv_cmd in privileged_commands):
+                # Prepend sudo if not already present
+                if not cmd[0] == 'sudo':
+                    cmd = ['sudo'] + cmd
+
+            result = subprocess.run(
+                cmd,
+                check=check,
+                capture_output=capture_output,
+                text=text
+            )
+            return result
+        except subprocess.CalledProcessError:
+            self.clean.die(f"Command failed: {' '.join(cmd)}")
+        except Exception as e:
+            self.clean.die(f"Error running command: {str(e)}")
+
     def __enter__(self):
         self.config = config_manager.get_config
         self.clean = CleanupManager(self)
@@ -115,7 +142,7 @@ class ApManager:
             if os.path.exists('/proc/sys/net/bridge/bridge-nf-call-iptables'):
                 bridge_src = '/proc/sys/net/bridge/bridge-nf-call-iptables'
                 bridge_dst = os.path.join(self.conf_dir, 'bridge-nf-call-iptables')
-            cp_n_safe(bridge_src, bridge_dst)
+                cp_n_safe(bridge_src, bridge_dst)
 
             # Unlock mutex
             self.lock.mutex_unlock()
@@ -130,7 +157,7 @@ class ApManager:
             # Disable power save mode if using iwconfig
             if self.use_iwconfig:
                 try:
-                    subprocess.run(
+                    self.run_command(
                         ['iw', 'dev', self.config['wifi_iface'], 'set', 'power_save', 'off'],
                         check=True
                     )
@@ -155,7 +182,7 @@ class ApManager:
 
             # Update and save configuration
             try:
-                self.config_manager.update_config(self.config)
+                self.config_manager._dict_update(self.config_manager.get_config, self.config)
                 self.config_manager.save_config()
             except Exception as e:
                 self.clean.die(f"Failed to update configuration: {str(e)}")
@@ -238,7 +265,7 @@ class ApManager:
                     gateway_network = f"{'.'.join(self.config['gateway'].split('.')[:3])}.0/24"
 
                     # Masquerade traffic from the WiFi network
-                    subprocess.run([
+                    self.run_command([
                         'iptables', '-w', '-t', 'nat', '-I', 'POSTROUTING',
                         '-s', gateway_network,
                         '!', '-o', self.config['wifi_iface'],
@@ -246,7 +273,7 @@ class ApManager:
                     ], check=True)
 
                     # Allow forwarding from WiFi to internet
-                    subprocess.run([
+                    self.run_command([
                         'iptables', '-w', '-I', 'FORWARD',
                         '-i', self.config['wifi_iface'],
                         '-s', gateway_network,
@@ -254,7 +281,7 @@ class ApManager:
                     ], check=True)
 
                     # Allow forwarding from internet to WiFi
-                    subprocess.run([
+                    self.run_command([
                         'iptables', '-w', '-I', 'FORWARD',
                         '-i', self.config['internet_iface'],
                         '-d', gateway_network,
@@ -270,7 +297,7 @@ class ApManager:
                         f.write('1')
 
                     # Load nf_nat_pptp module for PPTP support
-                    subprocess.run(['modprobe', 'nf_nat_pptp'], capture_output=True)
+                    self.run_command(['modprobe', 'nf_nat_pptp'], capture_output=True)
 
                 except (subprocess.CalledProcessError, IOError) as e:
                     self.clean.die(f"Failed to set up NAT rules: {str(e)}")
@@ -299,7 +326,7 @@ class ApManager:
                         print("Create a bridge interface... ", end='')
 
                         # Save current IP addresses and routes
-                        ip_output = subprocess.run(
+                        ip_output = self.run_command(
                             ['ip', 'addr', 'show', self.config['internet_iface']],
                             capture_output=True, text=True, check=True
                         ).stdout
@@ -311,7 +338,7 @@ class ApManager:
                                 ip_addrs.append(line.strip())
 
                         # Save current routes
-                        route_output = subprocess.run(
+                        route_output = self.run_command(
                             ['ip', 'route', 'show', 'dev', self.config['internet_iface']],
                             capture_output=True, text=True, check=True
                         ).stdout
@@ -323,12 +350,12 @@ class ApManager:
                             self.netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
 
                         # Create bridge interface
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'link', 'add', 'name', self.config['bridge_iface'],
                             'type', 'bridge'
                         ], check=True)
 
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'link', 'set', 'dev', self.config['bridge_iface'], 'up'
                         ], check=True)
 
@@ -337,22 +364,22 @@ class ApManager:
                             f.write('0')
 
                         # Attach internet interface to bridge interface
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'link', 'set', 'dev', self.config['internet_iface'],
                             'promisc', 'on'
                         ], check=True)
 
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'link', 'set', 'dev', self.config['internet_iface'], 'up'
                         ], check=True)
 
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'link', 'set', 'dev', self.config['internet_iface'],
                             'master', self.config['bridge_iface']
                         ], check=True)
 
                         # Flush old IP addresses
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'addr', 'flush', self.config['internet_iface']
                         ], check=True)
 
@@ -363,16 +390,16 @@ class ApManager:
                             clean_addr = re.sub(r'(\d+)sec', r'\1', clean_addr)
                             clean_addr = clean_addr.replace(f' {self.config["internet_iface"]}', '')
 
-                            subprocess.run([
+                            self.run_command([
                                 'ip', 'addr', 'add', clean_addr, 'dev', self.config['bridge_iface']
                             ], check=True)
 
                         # Flush old routes
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'route', 'flush', 'dev', self.config['internet_iface']
                         ], check=True)
 
-                        subprocess.run([
+                        self.run_command([
                             'ip', 'route', 'flush', 'dev', self.config['bridge_iface']
                         ], check=True)
 
@@ -380,14 +407,14 @@ class ApManager:
                         # First add non-default routes
                         for route in route_addrs:
                             if not route.startswith('default'):
-                                subprocess.run([
+                                self.run_command([
                                     'ip', 'route', 'add', route, 'dev', self.config['bridge_iface']
                                 ], check=True)
 
                         # Then add default routes
                         for route in route_addrs:
                             if route.startswith('default'):
-                                subprocess.run([
+                                self.run_command([
                                     'ip', 'route', 'add', route, 'dev', self.config['bridge_iface']
                                 ], check=True)
 
@@ -403,9 +430,9 @@ class ApManager:
         # Check if stdbuf is available for unbuffered output
         stdbuf_path = None
         try:
-            result = subprocess.run(['which', 'stdbuf'],
-                                    capture_output=True, text=True,
-                                    check=True)
+            result = self.run_command(['which', 'stdbuf'],
+                                      capture_output=True, text=True,
+                                      check=True)
             stdbuf_path = result.stdout.strip()
         except subprocess.CalledProcessError:
             pass
@@ -517,7 +544,7 @@ class ApManager:
             if not self.config.get('no_dnsmasq', False):
                 try:
                     # Allow DHCP traffic
-                    subprocess.run([
+                    self.run_command([
                         'iptables', '-w', '-I', 'INPUT',
                         '-p', 'udp', '-m', 'udp',
                         '--dport', '67',
@@ -528,7 +555,7 @@ class ApManager:
                     complain_cmd = None
                     try:
                         # Check for complain command
-                        result = subprocess.run(
+                        result = self.run_command(
                             ['command', '-v', 'complain'],
                             capture_output=True, text=True, check=True
                         )
@@ -536,7 +563,7 @@ class ApManager:
                     except subprocess.CalledProcessError:
                         try:
                             # Check for aa-complain command
-                            result = subprocess.run(
+                            result = self.run_command(
                                 ['command', '-v', 'aa-complain'],
                                 capture_output=True, text=True, check=True
                             )
@@ -545,12 +572,12 @@ class ApManager:
                             pass
 
                     if complain_cmd:
-                        subprocess.run([complain_cmd, 'dnsmasq'], check=True)
+                        self.run_command([complain_cmd, 'dnsmasq'], check=True)
 
                     # Set umask and start dnsmasq
                     old_umask = os.umask(0o033)
                     try:
-                        subprocess.run([
+                        self.run_command([
                             'dnsmasq',
                             '-C', os.path.join(self.conf_dir, 'dnsmasq.conf'),
                             '-x', os.path.join(self.conf_dir, 'dnsmasq.pid'),
@@ -569,23 +596,23 @@ class ApManager:
         try:
             # Set MAC address if virtualization is enabled and MAC is specified
             if not self.config.get('no_virt', False) and self.config.get('mac'):
-                subprocess.run([
+                self.run_command([
                     'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
 
             # Bring interface down and flush addresses
-            subprocess.run([
+            self.run_command([
                 'ip', 'link', 'set', 'down', 'dev', self.config['wifi_iface']
             ], check=True)
 
-            subprocess.run([
+            self.run_command([
                 'ip', 'addr', 'flush', self.config['wifi_iface']
             ], check=True)
 
             # Set MAC address if virtualization is disabled and MAC is specified
             if self.config.get('no_virt', False) and self.config.get('mac'):
-                subprocess.run([
+                self.run_command([
                     'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
@@ -593,7 +620,7 @@ class ApManager:
             # Configure interface for non-bridge sharing method
             if self.config.get('share_method', 'none') != 'bridge':
                 # Bring interface up
-                subprocess.run([
+                self.run_command([
                     'ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']
                 ], check=True)
 
@@ -601,7 +628,7 @@ class ApManager:
                 gateway = self.config['gateway']
                 broadcast = f"{'.'.join(gateway.split('.')[:3])}.255"
 
-                subprocess.run([
+                self.run_command([
                     'ip', 'addr', 'add', f"{gateway}/24",
                     'broadcast', broadcast,
                     'dev', self.config['wifi_iface']
@@ -816,9 +843,9 @@ class ApManager:
 
         try:
             # Create the virtual interface
-            result = subprocess.run(
+            result = self.run_command(
                 ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
-                self.config['vwifi_iface'], 'type', '__ap'],
+                 self.config['vwifi_iface'], 'type', '__ap'],
                 check=True, capture_output=True, text=True
             )
 
@@ -854,6 +881,7 @@ class ApManager:
         except subprocess.CalledProcessError as e:
             self.clean.die(f"Failed to create virtual interface: {str(e)}")
         except Exception as e:
+            raise
             self.clean.die(f"Error during virtual interface creation: {str(e)}")
 
     def _get_channels_(self) -> bool:
@@ -887,6 +915,27 @@ class ApManager:
                 if 'wl' in line and 'state UP' in line:
                     ifname = line.split(':')[1].strip()
                     wifi_ifaces.append(ifname)
+            return wifi_ifaces
+        except Exception as e:
+            print(f"Error getting wifi_ifaces: {e}")
+            return []
+
+    def get_all_available_ifaces(self):
+        """Get list of available wireless wifi_ifaces"""
+        try:
+            result = subprocess.run(['ip', 'link', 'show'], capture_output=True, text=True)
+            wifi_ifaces = []
+            for line in result.stdout.split('\n'):
+                state = "UP" if "state UP" in line else 'DOWN'
+
+                # if 'wl' in line and 'state UP' in line:
+                if len(line.split(':')) < 2 or not any([state_str in line for state_str in ('state UP', 'state DOWN')]):
+                    continue
+
+                ifname = line.split(':')[1].strip()
+                itype = 'Ethernet' if 'eth' in ifname else 'Wifi' if 'wlan' in ifname else 'Bridge' if 'br' in ifname else '-'
+
+                wifi_ifaces.append({"name": ifname, "state": state, "type": itype})
             return wifi_ifaces
         except Exception as e:
             print(f"Error getting wifi_ifaces: {e}")
@@ -1026,22 +1075,22 @@ class ApManager:
         try:
             if self.config['mode'] == 'nmcli':
                 # Use NetworkManager CLI for stopping and deleting the connection
-                subprocess.run(['nmcli', 'con', 'down', self.config['vwifi_iface']],
-                               check=True, capture_output=True)
-                subprocess.run(['nmcli', 'con', 'delete', self.config['vwifi_iface']],
-                               check=True, capture_output=True)
+                self.run_command(['nmcli', 'con', 'down', self.config['vwifi_iface']],
+                                 check=True, capture_output=True)
+                self.run_command(['nmcli', 'con', 'delete', self.config['vwifi_iface']],
+                                 check=True, capture_output=True)
             else:
                 # Stop hostapd service
-                subprocess.run(['systemctl', 'stop', 'hostapd'],
-                               check=True, capture_output=True)
+                self.run_command(['systemctl', 'stop', 'hostapd'],
+                                 check=True, capture_output=True)
 
                 # Stop systemd-networkd service
-                subprocess.run(['systemctl', 'stop', 'systemd-networkd'],
-                               check=True, capture_output=True)
+                self.run_command(['systemctl', 'stop', 'systemd-networkd'],
+                                 check=True, capture_output=True)
 
                 # Restart NetworkManager
-                subprocess.run(['systemctl', 'start', 'NetworkManager'],
-                               check=True, capture_output=True)
+                self.run_command(['systemctl', 'start', 'NetworkManager'],
+                                 check=True, capture_output=True)
 
                 # Additional cleanup using iw and ip commands
                 self._cleanup_network_interface()
@@ -1055,17 +1104,17 @@ class ApManager:
         """Perform additional cleanup using iw and ip commands."""
         try:
             # Bring down the interface
-            subprocess.run(['ip', 'link', 'set', 'dev', self.config['vwifi_iface'], 'down'],
-                           check=True, capture_output=True)
+            self.run_command(['ip', 'link', 'set', 'dev', self.config['vwifi_iface'], 'down'],
+                             check=True, capture_output=True)
 
             # Flush IP addresses
-            subprocess.run(['ip', 'addr', 'flush', self.config['vwifi_iface']],
-                           check=True, capture_output=True)
+            self.run_command(['ip', 'addr', 'flush', self.config['vwifi_iface']],
+                             check=True, capture_output=True)
 
             # Remove the interface if it's a virtual interface
             if not self.config.get('no_virt', False):
-                subprocess.run(['iw', 'dev', self.config['vwifi_iface'], 'del'],
-                               check=True, capture_output=True)
+                self.run_command(['iw', 'dev', self.config['vwifi_iface'], 'del'],
+                                 check=True, capture_output=True)
 
             # Remove from NetworkManager unmanaged list if needed
             if self.netmanager.networkmanager_is_running():
@@ -1325,7 +1374,7 @@ class ApManager:
         if not PHY:
             return None
 
-        result = subprocess.run(['iw', 'phy', PHY, 'info'], capture_output=True, text=True)
+        result = self.run_command(['iw', 'phy', PHY, 'info'], capture_output=True, text=True)
         return result.stdout if result.returncode == 0 else None
 
     def get_phy_device(self, iface=None) -> str:
@@ -1430,7 +1479,7 @@ class ApManager:
                         self.mutex_lock()
                         try:
                             # Start haveged with a specific PID file
-                            subprocess.Popen(['haveged', '-w', '1024', '-p',
+                            subprocess.Popen(['sudo', 'haveged', '-w', '1024', '-p',
                                               os.path.join(self.conf_dir, 'haveged.pid')])
                         finally:
                             self.mutex_unlock()
@@ -1439,20 +1488,20 @@ class ApManager:
 
             time.sleep(2)
 
-    def is_haveged_installed():
+    def is_haveged_installed(self):
         """Check if haveged is installed"""
         try:
-            subprocess.run(['which', 'haveged'],
-                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.run_command(['which', 'haveged'],
+                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
             return False
 
-    def is_haveged_running():
+    def is_haveged_running(self):
         """Check if haveged is running (HAVE GEnerated Daemon)"""
         try:
-            subprocess.run(['pidof', 'haveged'],
-                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.run_command(['pidof', 'haveged'],
+                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -1548,7 +1597,7 @@ class ApManager:
         # List clients using iw if available
         if not self.config.get('use_iwconfig', False):
             try:
-                result = subprocess.run(
+                result = self.run_command(
                     ['iw', 'dev', wifi_iface, 'station', 'dump'],
                     capture_output=True, text=True, check=True
                 )
@@ -1576,7 +1625,7 @@ class ApManager:
                 pass
 
         # Fallback to error if iwconfig is required
-        sys.exit(f"Error: This option is not supported for the current driver.")
+        sys.exit("Error: This option is not supported for the current driver.")
 
     def has_running_instance(self) -> bool:
         """Check if there are any running instances."""

@@ -7,6 +7,7 @@ from ap_manager import ApManager
 from ap_utils.config import config_manager, ConfigManager
 import getpass
 from typing import Union
+from ap_utils.colors import fg
 
 version = "1.0.0"
 
@@ -281,10 +282,10 @@ def validate_arguments(args):
         elif args.action == 'configure':
             return manager.configure(args.ssid, args.password, args.interface, args.mode)
         elif args.action == 'interfaces':
-            interfaces = manager.get_available_interfaces()
-            print("Available wireless interfaces:")
+            interfaces = manager.get_all_available_ifaces()
+            print("Available interfaces:")
             for iface in interfaces:
-                print(f"  - {iface}")
+                print(f"  - {fg.DWHITE}{iface['name']} {fg.GREEN if iface['state'] == 'UP' else fg.RED}{iface['state']} {fg.YELLOW}{iface['type']}{fg.RESET}")
         return manager
     except KeyboardInterrupt:
         sys.exit('\nQuit')
@@ -293,7 +294,7 @@ def validate_arguments(args):
 
 
 if __name__ == '__main__':
-    # if os.geteuid() != 0:
-    #   print("This script must be run as root")
-    #   sys.exit(1)
+    if os.geteuid() != 0:
+        print("This script must be run as root")
+        sys.exit(1)
     main()
