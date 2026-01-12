@@ -11,7 +11,7 @@ class CleanupManager(SignalHandler):
     def __init__(self, ap_man):
         # Initialize SignalHandler with config
         super().__init__(ap_man.config)
-        
+
         # Ap man config
         self.ap_man = ap_man
         self.lock = self.ap_man.lock
@@ -248,10 +248,9 @@ class CleanupManager(SignalHandler):
 
     def cleanup(self):
         """Public cleanup function that provides user feedback."""
-        print("\nDoing cleanup...", end=' ', flush=True)
+        print("\nDoing cleanup...", end='\n', flush=True)
         try:
             self._cleanup()
-            print("done")
         except Exception as e:
             print(f"cleanup failed: {str(e)}")
             # Still try to do basic cleanup even if main cleanup fails
@@ -281,14 +280,14 @@ class CleanupManager(SignalHandler):
                             os.remove(pid_path)
                         except (IOError, ValueError, OSError, ProcessLookupError):
                             pass
-            
+
             # Remove PID files
             try:
                 if os.path.exists(self.COUNTER_LOCK_FILE):
                     os.remove(self.COUNTER_LOCK_FILE)
             except OSError:
                 pass
-                
+
             print("basic cleanup completed")
         except Exception:
             pass
@@ -328,17 +327,17 @@ class CleanupManager(SignalHandler):
                     # Skip non-ap_manager files
                     if not item.startswith('ap_manager'):
                         continue
-                    
+
                     # Check if this is a valid running configuration
                     pid_file = os.path.join(self.proc_dir, item + '.pid') if item else None
                     wifi_iface_file = os.path.join(self.conf_dir, item, 'wifi_iface') if item else None
-                    
+
                     if pid_file and wifi_iface_file:
                         if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
                             running_confs.append(os.path.join(self.conf_dir, item))
         except OSError:
             pass
-        
+
         return running_confs
 
     def _is_bridge_interface_(self, iface: str) -> bool:

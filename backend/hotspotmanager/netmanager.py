@@ -101,6 +101,11 @@ class NetworkManager:
         except subprocess.CalledProcessError:
             return False
 
+    def is_interface(self, iface=None):
+        """Check if interface exists"""
+        iface = iface if iface else self.config['wifi_iface']
+        return os.path.exists(f"/sys/class/net/{iface}")
+
     def networkmanager_iface_is_unmanaged(self, iface: str) -> bool:
         """Check if the interface is unmanaged by NetworkManager."""
         if not self.is_interface(iface):
@@ -141,7 +146,6 @@ class NetworkManager:
                 return False
 
         # Lock mutex
-        self.lock.mutex_lock()
         try:
             # Read current unmanaged devices
             unmanaged = None
@@ -149,8 +153,6 @@ class NetworkManager:
                 for line in f:
                     if line.startswith('unmanaged-devices='):
                         unmanaged = line.strip()
-                        break
-
             was_empty = unmanaged is None
             if unmanaged:
                 unmanaged = unmanaged.replace('unmanaged-devices=', '').replace(';', ' ').replace(',', ' ').split()
@@ -203,11 +205,8 @@ class NetworkManager:
                             in_keyfile = False
                         if in_keyfile and line.startswith('unmanaged-devices='):
                             line = f"{unmanaged_line}\n"
-                        f.write(line)
 
             # Track added interfaces
-            ADDED_UNMANAGED.add(iface)
-
             # Send SIGHUP to NetworkManager
             try:
                 nm_pid = subprocess.run(['pidof', 'NetworkManager'],
@@ -219,7 +218,7 @@ class NetworkManager:
 
             return True
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
 
     def networkmanager_rm_unmanaged(self, iface: str, mac: Optional[str] = None) -> bool:
         """Remove an interface from NetworkManager's unmanaged devices list."""
@@ -324,7 +323,7 @@ class NetworkManager:
             except subprocess.CalledProcessError:
                 pass
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
 
     def networkmanager_rm_unmanaged_if_needed(self, iface: str, mac: Optional[str] = None) -> bool:
         """Remove an interface from unmanaged list if it was added by this script."""
@@ -334,9 +333,11 @@ class NetworkManager:
 
     def networkmanager_wait_until_unmanaged(self, iface: str, timeout: int = 30) -> bool:
         """Wait until the interface is marked as unmanaged by NetworkManager."""
+        print(f"Wait for {iface} to be unmanaged")
         if not self.networkmanager_is_running():
             return False
 
+        # self.networkmanager_add_unmanaged(iface)
         start_time = time.time()
         while time.time() - start_time < timeout:
             result = self.networkmanager_iface_is_unmanaged(iface)

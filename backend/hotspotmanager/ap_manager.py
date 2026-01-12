@@ -18,6 +18,7 @@ from lock import lock
 from netmanager import NetworkManager
 from cleanup import CleanupManager
 from ap_utils.copy import cp_n_safe
+from ap_utils.colors import fg
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -34,6 +35,10 @@ class ApManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
+
+    def __enter__(self):
+        self.config = config_manager.get_config
+        self.clean = CleanupManager(self)
 
     @classmethod
     def get_instance(cls):
@@ -80,7 +85,10 @@ class ApManager:
 
         self.virt_diems = "Maybe your WiFi adapter does not fully support virtual interfaces. Try again with --no-virt."
 
-    def run_command(self, cmd, check=True, capture_output=False, text=False):
+        # Increase resource limits to prevent file descriptor issues
+        self.increase_resource_limits()
+
+    def run_command(self, cmd, check=True, capture_output=False, text=False, force_return=False):
         """Run a command with proper error handling and sudo support"""
         try:
             # Check if we need sudo for this command
@@ -98,13 +106,32 @@ class ApManager:
             )
             return result
         except subprocess.CalledProcessError:
+            if force_return:
+                print(f"\n{fg.FRED}Command failed{fg.RESET}: {fg.FWHITE}{' '.join(cmd)}{fg.RESET}")
+                return {'status': 'error'}
             self.clean.die(f"Command failed: {' '.join(cmd)}")
         except Exception as e:
             self.clean.die(f"Error running command: {str(e)}")
 
-    def __enter__(self):
-        self.config = config_manager.get_config
-        self.clean = CleanupManager(self)
+    def increase_resource_limits(self):
+        """Increase system resource limits to prevent 'Too many open files' errors"""
+        try:
+            import resource
+            # Increase file descriptor limit
+            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+            if soft_limit < 4096:
+                new_limit = min(hard_limit, 4096) if hard_limit > 0 else 4096
+                resource.setrlimit(resource.RLIMIT_NOFILE, (new_limit, hard_limit))
+                print(f"Increased file descriptor limit to {new_limit}")
+
+            # Increase process limit
+            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NPROC)
+            if soft_limit < 1024:
+                new_limit = min(hard_limit, 1024) if hard_limit > 0 else 1024
+                resource.setrlimit(resource.RLIMIT_NPROC, (new_limit, hard_limit))
+
+        except (ImportError, ValueError, resource.error) as e:
+            print(f"Warning: Could not increase resource limits: {str(e)}")
 
     def _ap_init_(self):
         """Initialize the access point with proper configuration."""
@@ -188,10 +215,10 @@ class ApManager:
                 self.clean.die(f"Failed to update configuration: {str(e)}")
 
             # Create virtual interface
-            try:
-                self.create_virt_iface()
-            except Exception as e:
-                self.clean.die(f"Failed to create virtual interface: {str(e)}")
+            # try:
+            self.create_virt_iface()
+            # except Exception as e:
+            # self.clean.die(f"Failed to create virtual interface: {str(e)}")
 
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
@@ -350,6 +377,7 @@ class ApManager:
                             self.netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
 
                         # Create bridge interface
+                        print("Create bridge interface")
                         self.run_command([
                             'ip', 'link', 'add', 'name', self.config['bridge_iface'],
                             'type', 'bridge'
@@ -364,6 +392,7 @@ class ApManager:
                             f.write('0')
 
                         # Attach internet interface to bridge interface
+                        print("Attach internet interface to bridge interface")
                         self.run_command([
                             'ip', 'link', 'set', 'dev', self.config['internet_iface'],
                             'promisc', 'on'
@@ -428,6 +457,7 @@ class ApManager:
     def start_hostapd(self):
         """Start hostapd with proper error handling and output buffering."""
         # Check if stdbuf is available for unbuffered output
+
         stdbuf_path = None
         try:
             result = self.run_command(['which', 'stdbuf'],
@@ -653,7 +683,7 @@ class ApManager:
 
             # Extract version number and compare
             version_match = re.search(r'[0-9]+(\.[0-9]+)*\.[0-9]+', dnsmasq_ver)
-            if version_match and self.version_cmp(version_match.group(0), "2.63") == 1:
+            if version_match and self.netmanager.version_cmp(version_match.group(0), "2.63") == 1:
                 dnsmasq_bind = "bind-interfaces"
             else:
                 dnsmasq_bind = "bind-dynamic"
@@ -806,8 +836,10 @@ class ApManager:
             self.netmanager.networkmanager_add_unmanaged(self.config['wifi_iface'])
 
             if self.netmanager.networkmanager_is_running():
-                self.netmanager.networkmanager_wait_until_unmanaged(self.config['wifi_iface'])
-            print("DONE")
+                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['wifi_iface']):
+                    self.clean.die("Failed to wait for interface to be unmanaged")
+
+                print(" - DONE")
 
     def iface_freq_channel_setup(self):
         # Set correct frequency and channel
@@ -835,37 +867,37 @@ class ApManager:
                     print(f"channel: {self.config['channel']}")
 
             else:
-                print(f"Custom frequency band set with {self.config['freq_band']}Ghz with channel {self.config['channel']}")
+                print(f"Custom frequency band set to {self.config['freq_band']}Ghz and channel {self.config['channel']}")
 
     def create_virt_iface(self):
         """Create a virtual WiFi interface with proper configuration."""
         print("Creating a virtual WiFi interface... ", end='')
 
-        try:
-            # Create the virtual interface
-            result = self.run_command(
-                ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
-                 self.config['vwifi_iface'], 'type', '__ap'],
-                check=True, capture_output=True, text=True
-            )
+        # Create the virtual interface
+        result = self.run_command(
+            ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
+                self.config['vwifi_iface'], 'type', '__ap'],
+            check=True, capture_output=True, text=True, force_return=True
+        )
 
-            if result.returncode != 0:
-                self.config['vwifi_iface'] = None
-                self.clean.die(self.virt_diems)
+        try:
+            if isinstance(result, dict) and result['status'] == 'error':
+                print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
+                self.config_hostapd()
+                print(f"Interface {fg.BLUE}{self.config['vwifi_iface']}{fg.RESET} created")
+                # self.config['vwifi_iface'] = None
+                # self.clean.die(self.virt_diems)
 
             # Wait for NetworkManager to recognize the interface if needed
             if (self.netmanager.networkmanager_is_running() and self.netmanager.NM_OLDER_VERSION == 0):
-                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
-                    self.clean.die("Failed to wait for interface to be unmanaged")
-
-            print(f"{self.config['vwifi_iface']} created.")
+                self.make_unmanaged()
 
             # Handle MAC address configuration
             old_mac = self.get_macaddr(self.config['vwifi_iface'])
             new_mac = self.config.get('mac')
 
             # Get all existing MAC addresses
-            all_macs = self.get_all_macaddrs()
+            all_macs = self.get_all_macaddrs
 
             # If no new MAC specified or it's already in use, generate a new one
             if not new_mac or new_mac in all_macs:
@@ -878,10 +910,7 @@ class ApManager:
             # Update configuration with new interface and MAC
             self.config['wifi_iface'] = self.config['vwifi_iface']
 
-        except subprocess.CalledProcessError as e:
-            self.clean.die(f"Failed to create virtual interface: {str(e)}")
         except Exception as e:
-            raise
             self.clean.die(f"Error during virtual interface creation: {str(e)}")
 
     def _get_channels_(self) -> bool:
@@ -1204,6 +1233,7 @@ class ApManager:
         mac = mac if mac else self.config['mac']
         if not mac:
             return False
+
         return bool(re.match(r'^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$', mac))
 
     def is_unicast_macaddr(self, mac=None):
@@ -1213,6 +1243,11 @@ class ApManager:
             return False
         first_byte = int(mac.split(':')[0], 16)
         return first_byte % 2 == 0
+
+    def is_interface(self, iface=None):
+        """Check if interface exists"""
+        iface = iface if iface else self.config['wifi_iface']
+        return os.path.exists(f"/sys/class/net/{iface}")
 
     def get_macaddr(self, iface=None):
         """Get MAC address of an interface"""
@@ -1228,7 +1263,6 @@ class ApManager:
     def get_mtu(self, iface=None) -> int:
         """Get MTU of an interface"""
         iface = iface if iface else self.config['wifi_iface']
-
         if not self.is_interface(iface):
             return None
         try:
@@ -1278,11 +1312,6 @@ class ApManager:
                 i += 1
         finally:
             self.lock.mutex_unlock()
-
-    def is_interface(self, iface=None):
-        """Check if interface exists"""
-        iface = iface if iface else self.config['wifi_iface']
-        return os.path.exists(f"/sys/class/net/{iface}")
 
     @property
     def has_hostapd(self):
@@ -1421,6 +1450,7 @@ class ApManager:
     def get_all_macaddrs(self) -> list:
         """Get all MAC addresses from all network interfaces"""
         macs = []
+
         net_dir = "/sys/class/net/"
         try:
             for iface in os.listdir(net_dir):
@@ -1446,18 +1476,18 @@ class ApManager:
         last_byte_hex = old_mac.split(':')[-1]
         last_byte = int(last_byte_hex, 16)
 
-        self.mutex_lock()
+        self.lock.mutex_lock()
         try:
             for i in range(1, 256):
                 new_byte = (last_byte + i) % 256
                 new_mac = f"{old_mac.rsplit(':', 1)[0]}:{new_byte:02x}"
 
                 # Check if MAC address is already in use
-                all_macs = self.get_all_macaddrs()
+                all_macs = self.get_all_macaddrs
                 if new_mac not in all_macs:
                     return new_mac
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
 
         return None
 
@@ -1476,13 +1506,13 @@ class ApManager:
                             show_warn = False
                     elif not self.is_haveged_running():
                         print("Low entropy detected, starting haveged")
-                        self.mutex_lock()
+                        self.lock.mutex_lock()
                         try:
                             # Start haveged with a specific PID file
                             subprocess.Popen(['sudo', 'haveged', '-w', '1024', '-p',
                                               os.path.join(self.conf_dir, 'haveged.pid')])
                         finally:
-                            self.mutex_unlock()
+                            self.lock.mutex_unlock()
             except (IOError, ValueError):
                 pass
 
@@ -1533,7 +1563,7 @@ class ApManager:
 
     def get_confdir_from_pid(self, pid: str) -> Optional[str]:
         """Get the configuration directory for a process ID."""
-        self.mutex_lock()
+        self.lock.mutex_lock()
         try:
             for conf_dir in self.list_running_conf():
                 pid_file = os.path.join(conf_dir, 'pid')
@@ -1543,7 +1573,7 @@ class ApManager:
                             return conf_dir
             return None
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
 
     def print_client(self, mac: str) -> None:
         """Print client information in a formatted way."""
@@ -1629,7 +1659,7 @@ class ApManager:
 
     def has_running_instance(self) -> bool:
         """Check if there are any running instances."""
-        self.mutex_lock()
+        self.lock.mutex_lock()
         try:
             for proc_item in os.listdir(self.proc_dir):
                 pid_file = os.path.join(self.proc_dir, proc_item)
@@ -1640,7 +1670,7 @@ class ApManager:
                         return True
             return False
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
 
     def is_running_pid(self, pid: str) -> bool:
         """Check if a specific PID is running."""
@@ -1701,7 +1731,7 @@ class ApManager:
 
     def send_stop(self, pid_or_iface: str) -> None:
         """Send stop signal to a specific instance."""
-        self.mutex_lock()
+        self.lock.mutex_lock()
         try:
             # Try to send stop to specific PID
             if self.is_running_pid(pid_or_iface):
@@ -1714,4 +1744,4 @@ class ApManager:
                 if pid_or_iface in parts[-1]:
                     os.kill(int(parts[0]), signal.SIGUSR1)
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
