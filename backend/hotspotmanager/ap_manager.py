@@ -648,13 +648,16 @@ class ApManager:
                 ], check=True)
 
             # Configure interface for non-bridge sharing method
+            print('Configure interface for non-bridge sharing method')
             if self.config.get('share_method', 'none') != 'bridge':
                 # Bring interface up
+                print(" - Bring interface up")
                 self.run_command([
                     'ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']
                 ], check=True)
 
                 # Set IP address and broadcast
+                print(" - Set IP address and broadcast")
                 gateway = self.config['gateway']
                 broadcast = f"{'.'.join(gateway.split('.')[:3])}.255"
 
@@ -749,15 +752,19 @@ class ApManager:
             ]
 
             # Write basic configuration
+            print("Write basic configuration")
             with open(os.path.join(self.conf_dir, 'hostapd.conf'), 'w') as f:
                 f.write('\n'.join(config_lines) + '\n')
 
                 # Add country code if specified
+                print(f"{fg.FCYAN} - Add country code if specified{fg.RESET}")
                 if self.config.get('country'):
                     f.write(f"country_code={self.config['country']}\n")
                     f.write("ieee80211d=1\n")
 
                 # Set hardware mode based on frequency band
+                print(f"{fg.FCYAN} - Set hardware mode based on frequency band{fg.RESET}")
+                print("     ...")
                 if float(self.config.get('freq_band', 2.4)) == 2.4:
                     f.write("hw_mode=g\n")
                 else:
@@ -883,7 +890,7 @@ class ApManager:
         try:
             if isinstance(result, dict) and result['status'] == 'error':
                 print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
-                self.config_hostapd()
+                # self.config_hostapd()
                 print(f"Interface {fg.BLUE}{self.config['vwifi_iface']}{fg.RESET} created")
                 # self.config['vwifi_iface'] = None
                 # self.clean.die(self.virt_diems)
