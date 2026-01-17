@@ -294,7 +294,7 @@ def validate_arguments(args):
 
 
 if __name__ == '__main__':
-    if os.geteuid() != 0:
-        print("This script must be run as root")
-        sys.exit(1)
+    # if os.geteuid() != 0:
+    # print("This script must be run as root")
+    # sys.exit(1)
     main()

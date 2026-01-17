@@ -14,11 +14,15 @@ from threading import Thread
 import subprocess
 from pathlib import Path
 from ap_utils.config import config_manager, ConfigManager
-from lock import lock
-from netmanager import NetworkManager
-from cleanup import CleanupManager
+from core.lock import lock
+from core.netmanager import NetworkManager
+from core.cleanup import CleanupManager
 from ap_utils.copy import cp_n_safe
 from ap_utils.colors import fg
+from ap_utils.command import command
+from ap_utils.resource import increase_resource_limits
+from core.services import netservice
+
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -39,6 +43,8 @@ class ApManager:
     def __enter__(self):
         self.config = config_manager.get_config
         self.clean = CleanupManager(self)
+        self.command = command
+        command.set_cleanup_manager(self.clean)
 
     @classmethod
     def get_instance(cls):
@@ -86,52 +92,7 @@ class ApManager:
         self.virt_diems = "Maybe your WiFi adapter does not fully support virtual interfaces. Try again with --no-virt."
 
         # Increase resource limits to prevent file descriptor issues
-        self.increase_resource_limits()
-
-    def run_command(self, cmd, check=True, capture_output=False, text=False, force_return=False):
-        """Run a command with proper error handling and sudo support"""
-        try:
-            # Check if we need sudo for this command
-            privileged_commands = ['iptables', 'ip', 'iw', 'modprobe', 'systemctl', 'nmcli']
-            if any(cmd[0].endswith(priv_cmd) for priv_cmd in privileged_commands):
-                # Prepend sudo if not already present
-                if not cmd[0] == 'sudo':
-                    cmd = ['sudo'] + cmd
-
-            result = subprocess.run(
-                cmd,
-                check=check,
-                capture_output=capture_output,
-                text=text
-            )
-            return result
-        except subprocess.CalledProcessError:
-            if force_return:
-                print(f"\n{fg.FRED}Command failed{fg.RESET}: {fg.FWHITE}{' '.join(cmd)}{fg.RESET}")
-                return {'status': 'error'}
-            self.clean.die(f"Command failed: {' '.join(cmd)}")
-        except Exception as e:
-            self.clean.die(f"Error running command: {str(e)}")
-
-    def increase_resource_limits(self):
-        """Increase system resource limits to prevent 'Too many open files' errors"""
-        try:
-            import resource
-            # Increase file descriptor limit
-            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
-            if soft_limit < 4096:
-                new_limit = min(hard_limit, 4096) if hard_limit > 0 else 4096
-                resource.setrlimit(resource.RLIMIT_NOFILE, (new_limit, hard_limit))
-                print(f"Increased file descriptor limit to {new_limit}")
-
-            # Increase process limit
-            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NPROC)
-            if soft_limit < 1024:
-                new_limit = min(hard_limit, 1024) if hard_limit > 0 else 1024
-                resource.setrlimit(resource.RLIMIT_NPROC, (new_limit, hard_limit))
-
-        except (ImportError, ValueError, resource.error) as e:
-            print(f"Warning: Could not increase resource limits: {str(e)}")
+        increase_resource_limits()
 
     def _ap_init_(self):
         """Initialize the access point with proper configuration."""
@@ -184,7 +145,7 @@ class ApManager:
             # Disable power save mode if using iwconfig
             if self.use_iwconfig:
                 try:
-                    self.run_command(
+                    command.run(
                         ['iw', 'dev', self.config['wifi_iface'], 'set', 'power_save', 'off'],
                         check=True
                     )
@@ -259,13 +220,11 @@ class ApManager:
 
             # Configure services
             try:
-                self.config_hostapd()
-                self.config_dnsmasq()
+                netservice.configure()
+
                 self.init_wifi_iface()
-                self.enable_internet_sharing()
-                self.start_dhcp_dns()
-                self.start_ap()
-                self.start_hostapd()
+
+                netservice.start()
             except Exception as e:
                 self.clean.die(f"Failed to configure services: {str(e)}")
 
@@ -276,373 +235,35 @@ class ApManager:
             self.clean.die(f"Initialization failed: {str(e)}")
 
     def start_ap(self):
-        print(f"hostapd command-line interface: hostapd_cli -p {self.conf_dir}/hostapd_ctrl")
+        print(f"{fg.YELLOW}hostapd{fg.RESET} command-line interface: {fg.LYELLOW}hostapd_cli -p {self.conf_dir}/hostapd_ctrl{fg.RESET}")
         if self.config['no_haveged']:
             self.haveged_watchdog()
             # HAVEGED_WATCHDOG_PID =
 
-    def enable_internet_sharing(self):
-        """Enable Internet sharing using the specified method."""
-        if self.config['share_method'] != 'none':
-            print(f"Sharing Internet using method: {self.config['share_method']}")
-
-            if self.config['share_method'] == "nat":
-                try:
-                    # Set up NAT rules
-                    gateway_network = f"{'.'.join(self.config['gateway'].split('.')[:3])}.0/24"
-
-                    # Masquerade traffic from the WiFi network
-                    self.run_command([
-                        'iptables', '-w', '-t', 'nat', '-I', 'POSTROUTING',
-                        '-s', gateway_network,
-                        '!', '-o', self.config['wifi_iface'],
-                        '-j', 'MASQUERADE'
-                    ], check=True)
-
-                    # Allow forwarding from WiFi to internet
-                    self.run_command([
-                        'iptables', '-w', '-I', 'FORWARD',
-                        '-i', self.config['wifi_iface'],
-                        '-s', gateway_network,
-                        '-j', 'ACCEPT'
-                    ], check=True)
-
-                    # Allow forwarding from internet to WiFi
-                    self.run_command([
-                        'iptables', '-w', '-I', 'FORWARD',
-                        '-i', self.config['internet_iface'],
-                        '-d', gateway_network,
-                        '-j', 'ACCEPT'
-                    ], check=True)
-
-                    # Enable IP forwarding for the internet interface
-                    with open(f"/proc/sys/net/ipv4/conf/{self.config['internet_iface']}/forwarding", 'w') as f:
-                        f.write('1')
-
-                    # Enable IP forwarding globally
-                    with open("/proc/sys/net/ipv4/ip_forward", 'w') as f:
-                        f.write('1')
-
-                    # Load nf_nat_pptp module for PPTP support
-                    self.run_command(['modprobe', 'nf_nat_pptp'], capture_output=True)
-
-                except (subprocess.CalledProcessError, IOError) as e:
-                    self.clean.die(f"Failed to set up NAT rules: {str(e)}")
-
-            elif self.config['share_method'] == "bridge":
-                try:
-                    # Disable iptables rules for bridged interfaces
-                    iptable_rules_file = "/proc/sys/net/bridge/bridge-nf-call-iptables"
-                    if os.path.exists(iptable_rules_file):
-                        with open("/proc/sys/net/bridge/bridge-nf-call-iptables", 'w') as f:
-                            f.write('0')
-
-                    """
-                    To initialize the bridge interface correctly we need to do the following:
-
-                    1) Save the IPs and route table of INTERNET_IFACE
-                    2) If NetworkManager is running set INTERNET_IFACE as unmanaged
-                    3) Create BRIDGE_IFACE and attach INTERNET_IFACE to it
-                    4) Set the previously saved IPs and route table to BRIDGE_IFACE
-
-                    We need the above because BRIDGE_IFACE is the master interface from now on
-                    and it must know where it's connected, otherwise connection is lost.
-                    """
-
-                    if not self.is_bridge_interface(self.config['internet_iface']):
-                        print("Create a bridge interface... ", end='')
-
-                        # Save current IP addresses and routes
-                        ip_output = self.run_command(
-                            ['ip', 'addr', 'show', self.config['internet_iface']],
-                            capture_output=True, text=True, check=True
-                        ).stdout
-
-                        # Extract IP addresses
-                        ip_addrs = []
-                        for line in ip_output.splitlines():
-                            if 'inet ' in line:
-                                ip_addrs.append(line.strip())
-
-                        # Save current routes
-                        route_output = self.run_command(
-                            ['ip', 'route', 'show', 'dev', self.config['internet_iface']],
-                            capture_output=True, text=True, check=True
-                        ).stdout
-                        route_addrs = [r.strip() for r in route_output.splitlines() if r.strip()]
-
-                        # Handle NetworkManager if running
-                        if self.netmanager.networkmanager_is_running():
-                            self.netmanager.networkmanager_add_unmanaged(self.config['internet_iface'])
-                            self.netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
-
-                        # Create bridge interface
-                        print("Create bridge interface")
-                        self.run_command([
-                            'ip', 'link', 'add', 'name', self.config['bridge_iface'],
-                            'type', 'bridge'
-                        ], check=True)
-
-                        self.run_command([
-                            'ip', 'link', 'set', 'dev', self.config['bridge_iface'], 'up'
-                        ], check=True)
-
-                        # Set 0ms forward delay
-                        with open(f"/sys/class/net/{self.config['bridge_iface']}/bridge/forward_delay", 'w') as f:
-                            f.write('0')
-
-                        # Attach internet interface to bridge interface
-                        print("Attach internet interface to bridge interface")
-                        self.run_command([
-                            'ip', 'link', 'set', 'dev', self.config['internet_iface'],
-                            'promisc', 'on'
-                        ], check=True)
-
-                        self.run_command([
-                            'ip', 'link', 'set', 'dev', self.config['internet_iface'], 'up'
-                        ], check=True)
-
-                        self.run_command([
-                            'ip', 'link', 'set', 'dev', self.config['internet_iface'],
-                            'master', self.config['bridge_iface']
-                        ], check=True)
-
-                        # Flush old IP addresses
-                        self.run_command([
-                            'ip', 'addr', 'flush', self.config['internet_iface']
-                        ], check=True)
-
-                        # Add saved IP addresses to bridge interface
-                        for addr in ip_addrs:
-                            # Clean up the address string
-                            clean_addr = addr.replace('inet ', '').replace(' secondary', '').replace(' dynamic', '')
-                            clean_addr = re.sub(r'(\d+)sec', r'\1', clean_addr)
-                            clean_addr = clean_addr.replace(f' {self.config["internet_iface"]}', '')
-
-                            self.run_command([
-                                'ip', 'addr', 'add', clean_addr, 'dev', self.config['bridge_iface']
-                            ], check=True)
-
-                        # Flush old routes
-                        self.run_command([
-                            'ip', 'route', 'flush', 'dev', self.config['internet_iface']
-                        ], check=True)
-
-                        self.run_command([
-                            'ip', 'route', 'flush', 'dev', self.config['bridge_iface']
-                        ], check=True)
-
-                        # Add saved routes to bridge interface
-                        # First add non-default routes
-                        for route in route_addrs:
-                            if not route.startswith('default'):
-                                self.run_command([
-                                    'ip', 'route', 'add', route, 'dev', self.config['bridge_iface']
-                                ], check=True)
-
-                        # Then add default routes
-                        for route in route_addrs:
-                            if route.startswith('default'):
-                                self.run_command([
-                                    'ip', 'route', 'add', route, 'dev', self.config['bridge_iface']
-                                ], check=True)
-
-                        print(f"{self.config['bridge_iface']} created.")
-
-                except (subprocess.CalledProcessError, IOError) as e:
-                    self.clean.die(f"Failed to set up bridge: {str(e)}")
-        else:
-            print("No Internet sharing")
-
-    def start_hostapd(self):
-        """Start hostapd with proper error handling and output buffering."""
-        # Check if stdbuf is available for unbuffered output
-
-        stdbuf_path = None
-        try:
-            result = self.run_command(['which', 'stdbuf'],
-                                      capture_output=True, text=True,
-                                      check=True)
-            stdbuf_path = result.stdout.strip()
-        except subprocess.CalledProcessError:
-            pass
-
-        # Build the hostapd command
-        hostapd_cmd = []
-        if stdbuf_path:
-            hostapd_cmd.extend([stdbuf_path, '-oL'])
-
-        hostapd_cmd.extend([
-            self.config['hostapd_path'],
-            *self.config.get('hostapd_debug_args', []),
-            os.path.join(self.conf_dir, 'hostapd.conf')
-        ])
-
-        # Start hostapd in the background
-        try:
-            # Use Popen instead of run to get the process object
-            self.hostapd_process = subprocess.Popen(
-                hostapd_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-
-            # Save the PID
-            self.hostapd_pid = self.hostapd_process.pid
-            with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
-                f.write(str(self.hostapd_pid))
-
-            # Wait for the process to complete
-            return_code = self.hostapd_process.wait()
-
-            if return_code != 0:
-                # Print error message if hostapd failed
-                error_msg = self.hostapd_process.stderr.read() if self.hostapd_process.stderr else ""
-                print("Error: Failed to run hostapd, maybe a program is interfering.")
-                print(f"Hostapd error output:\n{error_msg}")
-
-                # NetworkManager specific suggestions
-                if self.netmanager.networkmanager_is_running():
-                    print("If an error like 'n80211: Could not configure driver mode' was thrown, "
-                          "try running the following before starting ap_manager:")
-
-                    if self.nm_older_version:
-                        print("    nmcli nm wifi off")
-                    else:
-                        print("    nmcli r wifi off")
-
-                    print("    rfkill unblock wlan")
-
-                # Clean up and exit
-                self.die("Hostapd failed to start")
-
-        except Exception as e:
-            print(f"Error starting hostapd: {str(e)}")
-            self.die("Failed to start hostapd process")
-
-    def start_dhcp_dns(self):
-        """Start DHCP and DNS services with proper error handling."""
-        if self.config['share_method'] != 'bridge':
-            # Configure DNS if not disabled
-            if not self.config.get('no_dns', False):
-                dns_port = self.config.get('dns_port', 5353)
-
-                # Set up iptables rules for DNS
-                try:
-                    # Allow TCP DNS traffic
-                    subprocess.run([
-                        'iptables', '-w', '-I', 'INPUT',
-                        '-p', 'tcp', '-m', 'tcp',
-                        '--dport', str(dns_port),
-                        '-j', 'ACCEPT'
-                    ], check=True)
-
-                    # Allow UDP DNS traffic
-                    subprocess.run([
-                        'iptables', '-w', '-I', 'INPUT',
-                        '-p', 'udp', '-m', 'udp',
-                        '--dport', str(dns_port),
-                        '-j', 'ACCEPT'
-                    ], check=True)
-
-                    # Redirect TCP DNS traffic to our port
-                    gateway_network = f"{'.'.join(self.config['gateway'].split('.')[:3])}.0/24"
-                    subprocess.run([
-                        'iptables', '-w', '-t', 'nat', '-I', 'PREROUTING',
-                        '-s', gateway_network,
-                        '-d', self.config['gateway'],
-                        '-p', 'tcp', '-m', 'tcp',
-                        '--dport', '53',
-                        '-j', 'REDIRECT', '--to-ports', str(dns_port)
-                    ], check=True)
-
-                    # Redirect UDP DNS traffic to our port
-                    subprocess.run([
-                        'iptables', '-w', '-t', 'nat', '-I', 'PREROUTING',
-                        '-s', gateway_network,
-                        '-d', self.config['gateway'],
-                        '-p', 'udp', '-m', 'udp',
-                        '--dport', '53',
-                        '-j', 'REDIRECT', '--to-ports', str(dns_port)
-                    ], check=True)
-
-                except subprocess.CalledProcessError as e:
-                    self.clean.die(f"Failed to set up iptables rules for DNS: {str(e)}")
-
-            # Start dnsmasq if not disabled
-            if not self.config.get('no_dnsmasq', False):
-                try:
-                    # Allow DHCP traffic
-                    self.run_command([
-                        'iptables', '-w', '-I', 'INPUT',
-                        '-p', 'udp', '-m', 'udp',
-                        '--dport', '67',
-                        '-j', 'ACCEPT'
-                    ], check=True)
-
-                    # Handle AppArmor restrictions
-                    complain_cmd = None
-                    try:
-                        # Check for complain command
-                        result = self.run_command(
-                            ['command', '-v', 'complain'],
-                            capture_output=True, text=True, check=True
-                        )
-                        complain_cmd = result.stdout.strip()
-                    except subprocess.CalledProcessError:
-                        try:
-                            # Check for aa-complain command
-                            result = self.run_command(
-                                ['command', '-v', 'aa-complain'],
-                                capture_output=True, text=True, check=True
-                            )
-                            complain_cmd = result.stdout.strip()
-                        except subprocess.CalledProcessError:
-                            pass
-
-                    if complain_cmd:
-                        self.run_command([complain_cmd, 'dnsmasq'], check=True)
-
-                    # Set umask and start dnsmasq
-                    old_umask = os.umask(0o033)
-                    try:
-                        self.run_command([
-                            'dnsmasq',
-                            '-C', os.path.join(self.conf_dir, 'dnsmasq.conf'),
-                            '-x', os.path.join(self.conf_dir, 'dnsmasq.pid'),
-                            '-l', os.path.join(self.conf_dir, 'dnsmasq.leases'),
-                            '-p', str(self.config.get('dns_port', 5353))
-                        ], check=True)
-                    finally:
-                        # Restore original umask
-                        os.umask(old_umask)
-
-                except subprocess.CalledProcessError as e:
-                    self.clean.die(f"Failed to start dnsmasq: {str(e)}")
-
     def init_wifi_iface(self):
         """Initialize the WiFi interface with proper configuration."""
+        print("Init wifi")
         try:
             # Set MAC address if virtualization is enabled and MAC is specified
             if not self.config.get('no_virt', False) and self.config.get('mac'):
-                self.run_command([
+                command.run([
                     'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
 
+            print('Flush addresses')
             # Bring interface down and flush addresses
-            self.run_command([
+            command.run([
                 'ip', 'link', 'set', 'down', 'dev', self.config['wifi_iface']
             ], check=True)
 
-            self.run_command([
+            command.run([
                 'ip', 'addr', 'flush', self.config['wifi_iface']
             ], check=True)
-
+            print("set MAC")
             # Set MAC address if virtualization is disabled and MAC is specified
             if self.config.get('no_virt', False) and self.config.get('mac'):
-                self.run_command([
+                command.run([
                     'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
@@ -651,17 +272,25 @@ class ApManager:
             print('Configure interface for non-bridge sharing method')
             if self.config.get('share_method', 'none') != 'bridge':
                 # Bring interface up
-                print(" - Bring interface up")
-                self.run_command([
-                    'ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']
-                ], check=True)
+                print(" - Bring interface up\n")
+
+                def bring_interface_up():
+                    return command.run([
+                        'ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']
+                    ], check=True, force_return=True)
+
+                result = bring_interface_up()
+                print(result)
+                if not result or isinstance(result, dict) and result['status'] == 'error':
+                    command.run(['sudo', 'rfkill', 'unblock', 'all'], check=True)
+                    bring_interface_up()
 
                 # Set IP address and broadcast
-                print(" - Set IP address and broadcast")
+                print(" - Set IP address and broadcast\n")
                 gateway = self.config['gateway']
                 broadcast = f"{'.'.join(gateway.split('.')[:3])}.255"
 
-                self.run_command([
+                command.run([
                     'ip', 'addr', 'add', f"{gateway}/24",
                     'broadcast', broadcast,
                     'dev', self.config['wifi_iface']
@@ -674,168 +303,6 @@ class ApManager:
             if hasattr(self, 'virt_diems'):
                 error_msg += f"\n{self.virt_diems}"
             self.clean.die(error_msg)
-
-    def config_dnsmasq(self):
-        """Configure dnsmasq for DHCP and DNS services."""
-        try:
-            # Determine dnsmasq version and appropriate bind option
-            dnsmasq_ver = subprocess.run(
-                ['dnsmasq', '-v'],
-                capture_output=True, text=True, check=True
-            ).stdout.strip()
-
-            # Extract version number and compare
-            version_match = re.search(r'[0-9]+(\.[0-9]+)*\.[0-9]+', dnsmasq_ver)
-            if version_match and self.netmanager.version_cmp(version_match.group(0), "2.63") == 1:
-                dnsmasq_bind = "bind-interfaces"
-            else:
-                dnsmasq_bind = "bind-dynamic"
-
-            # Set DNS server address
-            dhcp_dns = self.config.get('dhcp_dns', 'gateway')
-            if dhcp_dns == "gateway":
-                dhcp_dns = self.config['gateway']
-
-            # Write dnsmasq configuration
-            with open(os.path.join(self.conf_dir, 'dnsmasq.conf'), 'w') as f:
-                f.write(f"listen-address={self.config['gateway']}\n")
-                f.write(f"{dnsmasq_bind}\n")
-                f.write(f"dhcp-range={self.config['gateway'][:-1]}1,{self.config['gateway'][:-1]}254,255.255.255.0,24h\n")
-                f.write(f"dhcp-option-force=option:router,{self.config['gateway']}\n")
-                f.write(f"dhcp-option-force=option:dns-server,{dhcp_dns}\n")
-
-                # Add MTU option if available
-                mtu = self.get_mtu(self.config['internet_iface'])
-                if mtu:
-                    f.write(f"dhcp-option-force=option:mtu,{mtu}\n")
-
-                # Disable hosts file if requested
-                if not self.config.get('etc_hosts', True):
-                    f.write("no-hosts\n")
-
-                # Add additional hosts file if specified
-                if self.config.get('addn_hosts'):
-                    f.write(f"addn-hosts={self.config['addn_hosts']}\n")
-
-                # Add DHCP hosts if specified
-                if self.config.get('dhcp_hosts'):
-                    for host in self.config['dhcp_hosts']:
-                        f.write(f"dhcp-host={host}\n")
-
-                # Configure DNS logging if specified
-                if self.config.get('dns_logfile'):
-                    f.write("log-queries\n")
-                    f.write(f"log-facility={self.config['dns_logfile']}\n")
-
-                # Redirect all traffic to localhost if requested
-                if (self.config.get('share_method') == "none"
-                        and self.config.get('redirect_to_localhost', False)):
-                    f.write(f"address=/#/{self.config['gateway']}\n")
-
-        except (subprocess.CalledProcessError, IOError, KeyError) as e:
-            self.clean.die(f"Failed to configure dnsmasq: {str(e)}")
-
-    def config_hostapd(self):
-        """Configure hostapd with all necessary parameters."""
-        try:
-            # Basic hostapd configuration
-            config_lines = [
-                "beacon_int=100",
-                f"ssid={self.config['ssid']}",
-                f"interface={self.config['wifi_iface']}",
-                f"driver={self.config['driver']}",
-                f"channel={self.config['channel']}",
-                f"ctrl_interface={os.path.join(self.conf_dir, 'hostapd_ctrl')}",
-                "ctrl_interface_group=0",
-                f"ignore_broadcast_ssid={int(self.config.get('hidden', False))}",
-                f"ap_isolate={int(self.config.get('isolate_clients', False))}"
-            ]
-
-            # Write basic configuration
-            print("Write basic configuration")
-            with open(os.path.join(self.conf_dir, 'hostapd.conf'), 'w') as f:
-                f.write('\n'.join(config_lines) + '\n')
-
-                # Add country code if specified
-                print(f"{fg.FCYAN} - Add country code if specified{fg.RESET}")
-                if self.config.get('country'):
-                    f.write(f"country_code={self.config['country']}\n")
-                    f.write("ieee80211d=1\n")
-
-                # Set hardware mode based on frequency band
-                print(f"{fg.FCYAN} - Set hardware mode based on frequency band{fg.RESET}")
-                print("     ...")
-                if float(self.config.get('freq_band', 2.4)) == 2.4:
-                    f.write("hw_mode=g\n")
-                else:
-                    f.write("hw_mode=a\n")
-
-                # MAC address filtering
-                if self.config.get('mac_filter'):
-                    f.write(f"macaddr_acl={int(self.config['mac_filter'])}\n")
-                    if self.config.get('mac_filter_accept'):
-                        f.write(f"accept_mac_file={self.config['mac_filter_accept']}\n")
-
-                # IEEE 802.11n configuration
-                if self.config.get('ieee80211n', False):
-                    f.write("ieee80211n=1\n")
-                    if self.config.get('ht_capab'):
-                        f.write(f"ht_capab={self.config['ht_capab']}\n")
-
-                # IEEE 802.11ac configuration
-                if self.config.get('ieee80211ac', False):
-                    f.write("ieee80211ac=1\n")
-
-                # IEEE 802.11ax configuration
-                if self.config.get('ieee80211ax', False):
-                    f.write("ieee80211ax=1\n")
-
-                # VHT capabilities
-                if self.config.get('vht_capab'):
-                    f.write(f"vht_capab={self.config['vht_capab']}\n")
-
-                # WMM enabled for n/ac
-                if self.config.get('ieee80211n', False) or self.config.get('ieee80211ac', False):
-                    f.write("wmm_enabled=1\n")
-
-                # WPA/WPA2 configuration
-                if self.config.get('password'):
-                    # Handle WPA version
-                    wpa_version = self.config.get('wpa_version', '2')
-                    if wpa_version == "1+2":
-                        wpa_version = "2"  # Default to WPA2 for "1+2" setting
-
-                    # Determine key type
-                    wpa_key_type = "passphrase" if not self.config.get('use_psk', False) else "psk"
-
-                    if wpa_version == "3":
-                        # WPA3 Transition Mode configuration
-                        f.write("wpa=2\n")
-                        f.write(f"wpa_{wpa_key_type}={self.config['password']}\n")
-                        f.write("wpa_key_mgmt=WPA-PSK SAE\n")
-                        f.write("wpa_pairwise=CCMP\n")
-                        f.write("rsn_pairwise=CCMP\n")
-                        f.write("ieee80211w=1\n")
-                    else:
-                        # Standard WPA/WPA2 configuration
-                        f.write(f"wpa={wpa_version}\n")
-                        f.write(f"wpa_{wpa_key_type}={self.config['password']}\n")
-                        f.write("wpa_key_mgmt=WPA-PSK\n")
-                        f.write("wpa_pairwise=CCMP\n")
-                        f.write("rsn_pairwise=CCMP\n")
-
-                # Bridge configuration
-                if self.config.get('share_method') == "bridge":
-                    f.write(f"bridge={self.config['bridge_iface']}\n")
-
-            # Configure dnsmasq if not using bridge and not disabled
-            if self.config.get('share_method') != "bridge" and not self.config.get('no_dnsmasq', False):
-                self.config_dnsmasq()
-
-            return True
-
-        except (IOError, KeyError) as e:
-            self.clean.die(f"Failed to configure hostapd: {str(e)}")
 
     def make_unmanaged(self):
         if self.netmanager.networkmanager_exists() and self.netmanager.networkmanager_iface_is_unmanaged(self.config['wifi_iface']):
@@ -881,26 +348,29 @@ class ApManager:
         print("Creating a virtual WiFi interface... ", end='')
 
         # Create the virtual interface
-        result = self.run_command(
+        '''
+        result = command.run(
             ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
                 self.config['vwifi_iface'], 'type', '__ap'],
             check=True, capture_output=True, text=True, force_return=True
         )
+        '''
 
         try:
-            if isinstance(result, dict) and result['status'] == 'error':
-                print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
-                # self.config_hostapd()
-                print(f"Interface {fg.BLUE}{self.config['vwifi_iface']}{fg.RESET} created")
-                # self.config['vwifi_iface'] = None
-                # self.clean.die(self.virt_diems)
+            # if not result or isinstance(result, dict) and result['status'] == 'error':
+            print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
+            # print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
+            # self.config_hostapd()
+
+            print(f"\n{fg.LWHITE}{fg.DWHITE}Interface\tStatus{fg.RESET}")
+            print(f"{fg.BLUE}{self.config['vwifi_iface']}\t\t{fg.BGREEN}Ready{fg.RESET}\n")
 
             # Wait for NetworkManager to recognize the interface if needed
             if (self.netmanager.networkmanager_is_running() and self.netmanager.NM_OLDER_VERSION == 0):
                 self.make_unmanaged()
 
             # Handle MAC address configuration
-            old_mac = self.get_macaddr(self.config['vwifi_iface'])
+            # old_mac = self.get_macaddr(self.config['vwifi_iface'])
             new_mac = self.config.get('mac')
 
             # Get all existing MAC addresses
@@ -918,7 +388,7 @@ class ApManager:
             self.config['wifi_iface'] = self.config['vwifi_iface']
 
         except Exception as e:
-            self.clean.die(f"Error during virtual interface creation: {str(e)}")
+            self.clean.die(f"{fg.RED}Error during virtual interface creation: {fg.LRED}{str(e)}{fg.RESET}")
 
     def _get_channels_(self) -> bool:
         adapter_info = self.get_adapter_info()
@@ -1111,22 +581,22 @@ class ApManager:
         try:
             if self.config['mode'] == 'nmcli':
                 # Use NetworkManager CLI for stopping and deleting the connection
-                self.run_command(['nmcli', 'con', 'down', self.config['vwifi_iface']],
-                                 check=True, capture_output=True)
-                self.run_command(['nmcli', 'con', 'delete', self.config['vwifi_iface']],
-                                 check=True, capture_output=True)
+                command.run(['nmcli', 'con', 'down', self.config['vwifi_iface']],
+                            check=True, capture_output=True)
+                command.run(['nmcli', 'con', 'delete', self.config['vwifi_iface']],
+                            check=True, capture_output=True)
             else:
                 # Stop hostapd service
-                self.run_command(['systemctl', 'stop', 'hostapd'],
-                                 check=True, capture_output=True)
+                command.run(['systemctl', 'stop', 'hostapd'],
+                            check=True, capture_output=True)
 
                 # Stop systemd-networkd service
-                self.run_command(['systemctl', 'stop', 'systemd-networkd'],
-                                 check=True, capture_output=True)
+                command.run(['systemctl', 'stop', 'systemd-networkd'],
+                            check=True, capture_output=True)
 
                 # Restart NetworkManager
-                self.run_command(['systemctl', 'start', 'NetworkManager'],
-                                 check=True, capture_output=True)
+                command.run(['systemctl', 'start', 'NetworkManager'],
+                            check=True, capture_output=True)
 
                 # Additional cleanup using iw and ip commands
                 self._cleanup_network_interface()
@@ -1140,17 +610,17 @@ class ApManager:
         """Perform additional cleanup using iw and ip commands."""
         try:
             # Bring down the interface
-            self.run_command(['ip', 'link', 'set', 'dev', self.config['vwifi_iface'], 'down'],
-                             check=True, capture_output=True)
+            command.run(['ip', 'link', 'set', 'dev', self.config['vwifi_iface'], 'down'],
+                        check=True, capture_output=True)
 
             # Flush IP addresses
-            self.run_command(['ip', 'addr', 'flush', self.config['vwifi_iface']],
-                             check=True, capture_output=True)
+            command.run(['ip', 'addr', 'flush', self.config['vwifi_iface']],
+                        check=True, capture_output=True)
 
             # Remove the interface if it's a virtual interface
             if not self.config.get('no_virt', False):
-                self.run_command(['iw', 'dev', self.config['vwifi_iface'], 'del'],
-                                 check=True, capture_output=True)
+                command.run(['iw', 'dev', self.config['vwifi_iface'], 'del'],
+                            check=True, capture_output=True)
 
             # Remove from NetworkManager unmanaged list if needed
             if self.netmanager.networkmanager_is_running():
@@ -1356,7 +826,7 @@ class ApManager:
             formatted_channel = f"{channel:02d}"
 
             # Check channel using iwlist
-            iwlist_output = self.run_command(f"iwlist {iface} channel")
+            iwlist_output = command.run(f"iwlist {iface} channel")
             pattern = rf"Channel\s+{formatted_channel}\s?:"
             channel_info = re.search(pattern, iwlist_output)
 
@@ -1410,7 +880,7 @@ class ApManager:
         if not PHY:
             return None
 
-        result = self.run_command(['iw', 'phy', PHY, 'info'], capture_output=True, text=True)
+        result = command.run(['iw', 'phy', PHY, 'info'], capture_output=True, text=True)
         return result.stdout if result.returncode == 0 else None
 
     def get_phy_device(self, iface=None) -> str:
@@ -1528,7 +998,7 @@ class ApManager:
     def is_haveged_installed(self):
         """Check if haveged is installed"""
         try:
-            self.run_command(['which', 'haveged'],
+            command.run(['which', 'haveged'],
                              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
@@ -1537,7 +1007,7 @@ class ApManager:
     def is_haveged_running(self):
         """Check if haveged is running (HAVE GEnerated Daemon)"""
         try:
-            self.run_command(['pidof', 'haveged'],
+            command.run(['pidof', 'haveged'],
                              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
@@ -1634,7 +1104,7 @@ class ApManager:
         # List clients using iw if available
         if not self.config.get('use_iwconfig', False):
             try:
-                result = self.run_command(
+                result = command.run(
                     ['iw', 'dev', wifi_iface, 'station', 'dump'],
                     capture_output=True, text=True, check=True
                 )

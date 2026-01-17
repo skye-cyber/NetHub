@@ -2,6 +2,7 @@ import signal
 import sys
 import os
 from typing import Optional
+from ap_utils.colors import fg
 
 
 class SignalHandler:
@@ -54,7 +55,7 @@ class SignalHandler:
     def die(self, message: Optional[str] = None):
         """Handle fatal errors and exit."""
         if message:
-            print(f"\nERROR: {message}\n", file=sys.stderr)
+            print(f"\nERROR: {fg.RED}{message}{fg.RESET}\n", file=sys.stderr)
 
         # Send die signal to the main process if not the main process
         if os.getpid() != os.getppid():

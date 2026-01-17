@@ -9,7 +9,7 @@ class LockManager:
         self.COUNTER_LOCK_FILE = f"/tmp/create_ap.{os.getpid()}.lock"
         self.lock_fd = None
         self.counter_mutex_fd = None
-        
+
         # Initialize the lock files
         self.__init_lock__()
 
@@ -51,7 +51,7 @@ class LockManager:
             finally:
                 # Restore original umask
                 os.umask(old_umask)
-            
+
             return True
         except Exception as e:
             print(f"Unexpected error in lock initialization: {str(e)}")

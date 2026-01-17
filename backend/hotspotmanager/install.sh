@@ -28,6 +28,7 @@ mkdir -p "$BASE_DIR/proc"
 
 # Copy files
 cp -r ap_utils "$INSTALL_DIR/"
+cp -r core "$INSTALL_DIR/"
 cp *.sh "$INSTALL_DIR/"
 cp *.py "$INSTALL_DIR/"
 cp -r config/* "$BASE_DIR/conf/"

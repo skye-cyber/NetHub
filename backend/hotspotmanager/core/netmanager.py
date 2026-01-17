@@ -3,7 +3,7 @@ import re
 import subprocess
 import time
 from typing import Optional
-from lock import lock
+from .lock import lock
 
 
 class NetworkManager:
@@ -349,3 +349,6 @@ class NetworkManager:
             time.sleep(1)
 
         return False
+
+    def rfkill_off(self):
+        return self.ap_man.command.run(['sudo', 'rfkill', 'unblock', 'phy0'], check=True)
