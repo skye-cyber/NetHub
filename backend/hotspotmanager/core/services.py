@@ -43,7 +43,7 @@ class NetServices:
                 f"channel={self.config['channel']}",
                 f"ctrl_interface={os.path.join(self.conf_dir, 'hostapd_ctrl')}",
                 "ctrl_interface_group=0",
-                f"ignore_broadcast_ssid={int(self.config.get('hidden', False))}",
+                f"ignore_broadcast_ssid={False}",  # int(self.config.get('hidden', False))
                 f"ap_isolate={int(self.config.get('isolate_clients', False))}"
             ]
 
