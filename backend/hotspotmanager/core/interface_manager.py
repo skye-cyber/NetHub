@@ -7,11 +7,9 @@ import os
 import re
 import subprocess
 import uuid
+from ap_utils.colors import fg
 from ap_utils.command import command
 from ap_utils.copy import cp_n_safe
-from ap_utils.colors import fg
-from .services import netservice
-from .shared import shared
 
 
 class InterfaceManager:
@@ -111,12 +109,9 @@ class InterfaceManager:
             except Exception as e:
                 self.clean.die(f"Failed to update configuration: {str(e)}")
 
-            netservice.configure()
-
             # Create virtual interface
             self.create_virtual_interface()
 
-            netservice.start()
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
             try:
@@ -189,7 +184,18 @@ class InterfaceManager:
         print("Creating a virtual WiFi interface... ", end='')
 
         try:
-            print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
+            # Actually create the virtual interface using iw command
+            result = command.run(
+                ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
+                    self.config['vwifi_iface'], 'type', '__ap'],
+                check=True, capture_output=True, text=True, force_return=True
+            )
+
+            if not result or isinstance(result, dict) and result['status'] == 'error':
+                print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
+                # print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
+                # self.config_hostapd()
+
             print(f"\n{fg.LWHITE}{fg.DWHITE}Interface\tStatus{fg.RESET}")
             print(f"{fg.BLUE}{self.config['vwifi_iface']}\t\t{fg.BGREEN}Ready{fg.RESET}\n")
 
@@ -248,7 +254,6 @@ class InterfaceManager:
             command.run([
                 'ip', 'addr', 'flush', self.config['wifi_iface']
             ], check=True)
-            print("set MAC")
 
             # Set MAC address if virtualization is disabled and MAC is specified
             if self.config.get('no_virt', False) and self.config.get('mac'):
@@ -269,7 +274,6 @@ class InterfaceManager:
                     ], check=True, force_return=True)
 
                 result = bring_interface_up()
-                print(result)
                 if not result or isinstance(result, dict) and result['status'] == 'error':
                     command.run(['sudo', 'rfkill', 'unblock', 'all'], check=True)
                     bring_interface_up()
@@ -362,13 +366,14 @@ class InterfaceManager:
         return first_byte % 2 == 0
 
     def is_interface(self, iface=None):
-        return shared.is_interface(iface or self.config['wifi_iface'])
+        """Check if interface exists"""
+        iface = iface if iface else self.config['wifi_iface']
+        return os.path.exists(f"/sys/class/net/{iface}")
 
     def get_mac_address(self, iface=None):
         """Get MAC address of an interface"""
         iface = iface if iface else self.config['wifi_iface']
         if not self.is_interface(iface):
-            print(f'{iface}: is not interface')
             return None
         try:
             with open(f"/sys/class/net/{iface}/address", 'r') as f:
@@ -377,8 +382,15 @@ class InterfaceManager:
             return None
 
     def get_mtu(self, iface=None) -> int:
-        iface = iface or self.config['wifi_iface']
-        return shared.get_mtu(iface)
+        """Get MTU of an interface"""
+        iface = iface if iface else self.config['wifi_iface']
+        if not self.is_interface(iface):
+            return None
+        try:
+            with open(f"/sys/class/net/{iface}/mtu", 'r') as f:
+                return int(f.read().strip())
+        except (IOError, ValueError):
+            return None
 
     def alloc_new_iface(self, prefix=None):
         """Allocate a new interface name"""
@@ -568,7 +580,6 @@ class InterfaceManager:
         iface = iface if iface else self.config['wifi_iface']
 
         old_mac = self.get_mac_address(iface)
-
         if not old_mac:
             return None
 
