@@ -50,11 +50,11 @@ chmod +x "$INSTALL_DIR/deps.sh"
 ln -sf "$INSTALL_DIR/ap_cli.py" /usr/local/bin/ap_manager
 
 echo "Setting up sodors ..."
-"$INSTALL_DIR/sudors_edit.sh" install
+# "$INSTALL_DIR/sudors_edit.sh" install
 
 # Install dependencies
 echo "Installing dependencies..."
-"$INSTALL_DIR/deps.sh" install
+# "$INSTALL_DIR/deps.sh" install
 
 # Create systemd service
 cp ap_manager.service /etc/systemd/system/

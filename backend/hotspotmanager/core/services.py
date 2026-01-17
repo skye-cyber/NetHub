@@ -127,14 +127,13 @@ class NetServices:
             return True
 
         except (IOError, KeyError) as e:
-
             sys.exit(f"Failed to configure hostapd: {str(e)}")
 
     def configure_dnsmasq(self):
         """Configure dnsmasq for DHCP and DNS services."""
         try:
             # Determine dnsmasq version and appropriate bind option
-            dnsmasq_ver = command.run(
+            dnsmasq_ver = subprocess.run(
                 ['dnsmasq', '-v'],
                 capture_output=True, text=True, check=True
             ).stdout.strip()
@@ -197,9 +196,9 @@ class NetServices:
 
         stdbuf_path = None
         try:
-            result = command.run(['which', 'stdbuf'],
-                                 capture_output=True, text=True,
-                                 check=True)
+            result = subprocess.run(['which', 'stdbuf'],
+                                    capture_output=True, text=True,
+                                    check=True)
             stdbuf_path = result.stdout.strip()
         except subprocess.CalledProcessError:
             pass
@@ -321,7 +320,7 @@ class NetServices:
                     complain_cmd = None
                     try:
                         # Check for complain command
-                        result = command.run(
+                        result = subprocess.run(
                             ['command', '-v', 'complain'],
                             capture_output=True, text=True, check=True
                         )
@@ -329,7 +328,7 @@ class NetServices:
                     except subprocess.CalledProcessError:
                         try:
                             # Check for aa-complain command
-                            result = command.run(
+                            result = subprocess.run(
                                 ['command', '-v', 'aa-complain'],
                                 capture_output=True, text=True, check=True
                             )
@@ -437,7 +436,7 @@ class NetServices:
                 print("Create a bridge interface... ", end='')
 
                 # Save current IP addresses and routes
-                ip_output = command.run(
+                ip_output = subprocess.run(
                     ['ip', 'addr', 'show', self.config['internet_iface']],
                     capture_output=True, text=True, check=True
                 ).stdout
@@ -449,7 +448,7 @@ class NetServices:
                         ip_addrs.append(line.strip())
 
                 # Save current routes
-                route_output = command.run(
+                route_output = subprocess.run(
                     ['ip', 'route', 'show', 'dev', self.config['internet_iface']],
                     capture_output=True, text=True, check=True
                 ).stdout

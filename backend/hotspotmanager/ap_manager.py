@@ -111,11 +111,7 @@ class ApManager:
 
             # Configure services
             try:
-                netservice.configure()
-
                 self.init_wifi_iface()
-
-                netservice.start()
             except Exception as e:
                 self.clean.die(f"Failed to configure services: {str(e)}")
 

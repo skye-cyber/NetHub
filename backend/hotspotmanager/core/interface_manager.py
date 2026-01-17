@@ -117,7 +117,6 @@ class InterfaceManager:
             self.create_virtual_interface()
 
             netservice.start()
-
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
             try:
