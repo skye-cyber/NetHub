@@ -5,19 +5,25 @@ import subprocess
 from ap_utils.colors import fg
 from ap_utils.command import command
 from ap_utils.config import config_manager
-# from lock import lock
+from .netmanager import netmanager
+from .shared import shared
 
 
 class NetServices:
     def __init__(self):
         self.config = config_manager.get_config
+        self.proc_dir = self.config['proc_dir']
+        self.conf_dir = self.config.get('conf_dir', config_manager.__bconfdir__)
 
     def __enter__(self):
         self.config = config_manager.get_config
 
     def configure(self):
-        self.config_hostapd()
-        self.config_dnsmasq()
+        self.configure_hostapd()
+
+        # Configure dnsmasq if not using bridge and not disabled
+        if self.config.get('share_method') != "bridge" and not self.config.get('no_dnsmasq', False):
+            self.configure_dnsmasq()
 
     def start(self):
         self.enable_internet_sharing()
@@ -118,17 +124,13 @@ class NetServices:
                 if self.config.get('share_method') == "bridge":
                     f.write(f"bridge={self.config['bridge_iface']}\n")
 
-            # Configure dnsmasq if not using bridge and not disabled
-            if self.config.get('share_method') != "bridge" and not self.config.get('no_dnsmasq', False):
-                self.config_dnsmasq()
-
             return True
 
         except (IOError, KeyError) as e:
 
             sys.exit(f"Failed to configure hostapd: {str(e)}")
 
-    def config_dnsmasq(self):
+    def configure_dnsmasq(self):
         """Configure dnsmasq for DHCP and DNS services."""
         try:
             # Determine dnsmasq version and appropriate bind option
@@ -139,7 +141,7 @@ class NetServices:
 
             # Extract version number and compare
             version_match = re.search(r'[0-9]+(\.[0-9]+)*\.[0-9]+', dnsmasq_ver)
-            if version_match and self.netmanager.version_cmp(version_match.group(0), "2.63") == 1:
+            if version_match and netmanager.version_cmp(version_match.group(0), "2.63") == 1:
                 dnsmasq_bind = "bind-interfaces"
             else:
                 dnsmasq_bind = "bind-dynamic"
@@ -158,7 +160,7 @@ class NetServices:
                 f.write(f"dhcp-option-force=option:dns-server,{dhcp_dns}\n")
 
                 # Add MTU option if available
-                mtu = self.get_mtu(self.config['internet_iface'])
+                mtu = shared.get_mtu(self.config['internet_iface'])
                 if mtu:
                     f.write(f"dhcp-option-force=option:mtu,{mtu}\n")
 
@@ -238,7 +240,7 @@ class NetServices:
                 print(f"Hostapd error output:\n{error_msg}")
 
                 # NetworkManager specific suggestions
-                if self.netmanager.networkmanager_is_running():
+                if netmanager.networkmanager_is_running():
                     print("If an error like 'n80211: Could not configure driver mode' was thrown, "
                           "try running the following before starting ap_manager:")
 
@@ -454,9 +456,9 @@ class NetServices:
                 route_addrs = [r.strip() for r in route_output.splitlines() if r.strip()]
 
                 # Handle NetworkManager if running
-                if self.netmanager.networkmanager_is_running():
-                    self.netmanager.networkmanager_add_unmanaged(self.config['internet_iface'])
-                    self.netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
+                if netmanager.networkmanager_is_running():
+                    netmanager.networkmanager_add_unmanaged(self.config['internet_iface'])
+                    netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
 
                 # Create bridge interface
                 print("Create bridge interface")

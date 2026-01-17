@@ -3,21 +3,18 @@
 Custom Hotspot Manager for Linux
 Supports both NetworkManager and systemd-networkd
 """
-import re
 import os
 import sys
-import signal
-import time
-import uuid
 from typing import Optional, List
-from threading import Thread
 import subprocess
 from pathlib import Path
 from ap_utils.config import config_manager, ConfigManager
 from core.lock import lock
 from core.netmanager import NetworkManager
 from core.cleanup import CleanupManager
-from ap_utils.copy import cp_n_safe
+from core.interface_manager import InterfaceManager
+from core.network_config import NetworkConfigurator
+from core.process_manager import ProcessManager
 from ap_utils.colors import fg
 from ap_utils.command import command
 from ap_utils.resource import increase_resource_limits
@@ -43,7 +40,6 @@ class ApManager:
     def __enter__(self):
         self.config = config_manager.get_config
         self.clean = CleanupManager(self)
-        self.command = command
         command.set_cleanup_manager(self.clean)
 
     @classmethod
@@ -78,6 +74,11 @@ class ApManager:
 
         self.clean = CleanupManager(self)
 
+        # Initialize new manager modules
+        self.interface_manager = InterfaceManager(self)
+        self.network_config = NetworkConfigurator(self)
+        self.process_manager = ProcessManager(self)
+
         self.proc_dir = self.config['proc_dir']
         self.conf_dir = self.config.get('conf_dir', config_manager.__bconfdir__)
 
@@ -97,118 +98,8 @@ class ApManager:
     def _ap_init_(self):
         """Initialize the access point with proper configuration."""
         try:
-            # Lock mutex for thread safety
-            self.lock.mutex_lock()
-
-            # Create configuration directory if it doesn't exist
-            os.makedirs(self.config['conf_dir'], exist_ok=True)
-
-            # Write PID file
-            _uuid_ = uuid.uuid4()
-            pidf_name = f"ap_manager-{str(_uuid_)[:6]}.pid"  # posfix basename with 6 char uuid4
-
-            pid_file = os.path.join(self.proc_dir, pidf_name)
-            with open(pid_file, 'w') as f:
-                f.write(str(os.getpid()))
-
-            # Set proper permissions for the PID file
-            os.chmod(pid_file, 0o444)
-
-            # Write internet interface information
-            nat_internet_file = os.path.join(self.conf_dir, 'nat_internet_iface')
-            with open(nat_internet_file, 'w') as f:
-                f.write(self.config['internet_iface'])
-
-            forwarding_src = f"/proc/sys/net/ipv4/conf/{self.config['internet_iface']}/forwarding"
-            forwarding_dst = os.path.join(self.conf_dir, f"{self.config['internet_iface']}_forwarding")
-            cp_n_safe(forwarding_src, forwarding_dst)
-
-            ip_forward_src = "/proc/sys/net/ipv4/ip_forward"
-            ip_forward_dst = os.path.join(self.conf_dir, 'ip_forward')
-            cp_n_safe(ip_forward_src, ip_forward_dst)
-
-            if os.path.exists('/proc/sys/net/bridge/bridge-nf-call-iptables'):
-                bridge_src = '/proc/sys/net/bridge/bridge-nf-call-iptables'
-                bridge_dst = os.path.join(self.conf_dir, 'bridge-nf-call-iptables')
-                cp_n_safe(bridge_src, bridge_dst)
-
-            # Unlock mutex
-            self.lock.mutex_unlock()
-
-            # Determine bridge interface
-            if self.config['share_method'] == "bridge":
-                if self.is_bridge_interface(self.config['internet_iface']):
-                    self.config['bridge_iface'] = self.config['internet_iface']
-                else:
-                    self.config['bridge_iface'] = self.alloc_new_iface('xbr')
-
-            # Disable power save mode if using iwconfig
-            if self.use_iwconfig:
-                try:
-                    command.run(
-                        ['iw', 'dev', self.config['wifi_iface'], 'set', 'power_save', 'off'],
-                        check=True
-                    )
-                except subprocess.CalledProcessError as e:
-                    self.clean.die(f"Failed to set power save mode: {str(e)}")
-
-            # Setup frequency and channel
-            self.iface_freq_channel_setup()
-
-            # Create virtual interface if needed
-            if self.config['no_virt']:
-                self.config['vwifi_iface'] = self.alloc_new_iface('xap')
-
-                # Set virtual interface as unmanaged in NetworkManager if possible
-                if (self.netmanager.networkmanager_is_running() and self.netmanager.NM_OLDER_VERSION == 0):
-                    print(f"Network Manager found, set {self.config['vwifi_iface']} as unmanaged device... ")
-                    try:
-                        self.netmanager.networkmanager_add_unmanaged(self.config['vwifi_iface'])
-                        print("DONE")
-                    except Exception as e:
-                        self.clean.die(f"Failed to set interface as unmanaged: {str(e)}")
-
-            # Update and save configuration
-            try:
-                self.config_manager._dict_update(self.config_manager.get_config, self.config)
-                self.config_manager.save_config()
-            except Exception as e:
-                self.clean.die(f"Failed to update configuration: {str(e)}")
-
-            # Create virtual interface
-            # try:
-            self.create_virt_iface()
-            # except Exception as e:
-            # self.clean.die(f"Failed to create virtual interface: {str(e)}")
-
-            # Lock mutex for writing interface information
-            self.lock.mutex_lock()
-            try:
-                iface_dir = os.path.join(self.conf_dir, pid_file.strip('.pid'))
-                os.makedirs(iface_dir, exist_ok=True)
-
-                wifi_iface_file = os.path.join(iface_dir, 'wifi_iface')
-                with open(wifi_iface_file, 'w') as f:
-                    f.write(self.config['wifi_iface'])
-                os.chmod(wifi_iface_file, 0o444)
-            finally:
-                self.lock.mutex_unlock()
-
-            # Set country code if needed
-            if self.config['country'] and self.use_iwconfig:
-                try:
-                    subprocess.run(
-                        ['iw', 'reg', 'set', self.config['country']],
-                        check=True
-                    )
-                except subprocess.CalledProcessError as e:
-                    self.clean.die(f"Failed to set country code: {str(e)}")
-
-            # Make interface unmanaged if needed
-            try:
-                self.make_unmanaged()
-            except Exception as e:
-                self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
+            # Use the new interface manager to initialize the access point
+            self.interface_manager.initialize_access_point()
 
             # Print configuration information
             if self.config['hidden']:
@@ -304,95 +195,21 @@ class ApManager:
                 error_msg += f"\n{self.virt_diems}"
             self.clean.die(error_msg)
 
+    # Method moved to InterfaceManager
     def make_unmanaged(self):
-        if self.netmanager.networkmanager_exists() and self.netmanager.networkmanager_iface_is_unmanaged(self.config['wifi_iface']):
-            print(f"Network Manager found, set {self.config['wifi_iface']} as unmanaged device... ")
-            self.netmanager.networkmanager_add_unmanaged(self.config['wifi_iface'])
+        self.interface_manager.make_interface_unmanaged()
 
-            if self.netmanager.networkmanager_is_running():
-                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['wifi_iface']):
-                    self.clean.die("Failed to wait for interface to be unmanaged")
-
-                print(" - DONE")
-
+    # Method moved to InterfaceManager
     def iface_freq_channel_setup(self):
-        # Set correct frequency and channel
-        if self.is_wifi_connected(self.config['wifi_iface']):
-            if not self.config['freq_band']:
-                wifi_iface_freq = self.netmanager._get_interface_freq_(self.config['wifi_iface'])
-                wifi_iface_channel = self.ieee80211_frequency_to_channel(wifi_iface_freq)
+        self.interface_manager.setup_frequency_and_channel()
 
-                print(f"{self.config['wifi_iface']} is already associated with channel {wifi_iface_channel} ({wifi_iface_freq} MHz)")
-
-                self.config.update({'freq_band': 5}) if self.is_5ghz_frequency(wifi_iface_freq) else self.config.update({'freq_band': 2.4})
-
-                if wifi_iface_channel != wifi_iface_channel:
-                    if self._get_channels_() >= 2 and self.can_transmit_to_channel(self.config['wifi_iface'], self.config['channel']):
-                        print("multiple channels supported")
-                    else:
-                        # Fallback to currently connected channel if the adapter can not transmit to the default channel (1)
-                        print(f"multiple channels not supported, fallback to channel: {wifi_iface_channel}")
-                        self.config.update({'channel': wifi_iface_channel})
-                        if self.can_transmit_to_channel(self.config['wifi_iface'], self.config['channel']):
-                            print(f"Transmitting to channel {self.config['channel']}...")
-                        else:
-                            sys.exit(f"Your adapter can not transmit to channel {self.config['channel']}, frequency band {self.config['freq_band']}GHz.")
-                else:
-                    print(f"channel: {self.config['channel']}")
-
-            else:
-                print(f"Custom frequency band set to {self.config['freq_band']}Ghz and channel {self.config['channel']}")
-
+    # Method moved to InterfaceManager
     def create_virt_iface(self):
-        """Create a virtual WiFi interface with proper configuration."""
-        print("Creating a virtual WiFi interface... ", end='')
+        self.interface_manager.create_virtual_interface()
 
-        # Create the virtual interface
-        '''
-        result = command.run(
-            ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
-                self.config['vwifi_iface'], 'type', '__ap'],
-            check=True, capture_output=True, text=True, force_return=True
-        )
-        '''
-
-        try:
-            # if not result or isinstance(result, dict) and result['status'] == 'error':
-            print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
-            # print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
-            # self.config_hostapd()
-
-            print(f"\n{fg.LWHITE}{fg.DWHITE}Interface\tStatus{fg.RESET}")
-            print(f"{fg.BLUE}{self.config['vwifi_iface']}\t\t{fg.BGREEN}Ready{fg.RESET}\n")
-
-            # Wait for NetworkManager to recognize the interface if needed
-            if (self.netmanager.networkmanager_is_running() and self.netmanager.NM_OLDER_VERSION == 0):
-                self.make_unmanaged()
-
-            # Handle MAC address configuration
-            # old_mac = self.get_macaddr(self.config['vwifi_iface'])
-            new_mac = self.config.get('mac')
-
-            # Get all existing MAC addresses
-            all_macs = self.get_all_macaddrs
-
-            # If no new MAC specified or it's already in use, generate a new one
-            if not new_mac or new_mac in all_macs:
-                new_mac = self.get_new_macaddr(self.config['vwifi_iface'])
-                if not new_mac:
-                    self.clean.die("Failed to generate new MAC address")
-
-                self.config['mac'] = new_mac
-
-            # Update configuration with new interface and MAC
-            self.config['wifi_iface'] = self.config['vwifi_iface']
-
-        except Exception as e:
-            self.clean.die(f"{fg.RED}Error during virtual interface creation: {fg.LRED}{str(e)}{fg.RESET}")
-
+    # Method moved to InterfaceManager
     def _get_channels_(self) -> bool:
-        adapter_info = self.get_adapter_info()
-        return bool(re.search(r'channels\s<=\s2', adapter_info))
+        return self.interface_manager._get_channels_()
 
     def check_dependencies(self):
         """Check if required tools are available"""
@@ -682,113 +499,33 @@ class ApManager:
         else:
             return 0
 
+    # Methods moved to InterfaceManager
     def is_5ghz_frequency(self, freq=None):
-        """Check if frequency is in 5GHz band"""
-        return bool(re.match(r'^(49[0-9]{2})|(5[0-9]{3})(\.0+)?$', str(freq)))
+        return self.interface_manager.is_5ghz_frequency(freq)
 
     def is_wifi_connected(self, iface=None):
-        """Check if WiFi interface is connected"""
-        iface = iface if iface else self.config['wifi_iface']
-
-        if not self.use_iwconfig:
-            try:
-                result = subprocess.run(['iw', 'dev', iface, 'link'],
-                                        capture_output=True, text=True, check=True)
-                return 'Connected to' in result.stdout
-            except subprocess.CalledProcessError:
-                return False
-        else:
-            try:
-                result = subprocess.run(['iwconfig', iface],
-                                        capture_output=True, text=True, check=True)
-                return bool(re.search(r'Access Point: [0-9a-fA-F]{2}:', result.stdout))
-            except subprocess.CalledProcessError:
-                return False
+        return self.interface_manager.is_wifi_connected(iface)
 
     def is_macaddr(self, mac=None):
-        """Check if string is a valid MAC address"""
-        mac = mac if mac else self.config['mac']
-        if not mac:
-            return False
-
-        return bool(re.match(r'^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$', mac))
+        return self.interface_manager.is_mac_address(mac)
 
     def is_unicast_macaddr(self, mac=None):
-        """Check if MAC address is unicast"""
-        mac = mac if mac else self.config['mac']
-        if not self.is_macaddr(mac):
-            return False
-        first_byte = int(mac.split(':')[0], 16)
-        return first_byte % 2 == 0
+        return self.interface_manager.is_unicast_mac_address(mac)
 
     def is_interface(self, iface=None):
-        """Check if interface exists"""
-        iface = iface if iface else self.config['wifi_iface']
-        return os.path.exists(f"/sys/class/net/{iface}")
+        return self.interface_manager.is_interface(iface)
 
     def get_macaddr(self, iface=None):
-        """Get MAC address of an interface"""
-        iface = iface if iface else self.config['wifi_iface']
-        if not self.is_interface(iface):
-            return None
-        try:
-            with open(f"/sys/class/net/{iface}/address", 'r') as f:
-                return f.read().strip()
-        except IOError:
-            return None
+        return self.interface_manager.get_mac_address(iface)
 
     def get_mtu(self, iface=None) -> int:
-        """Get MTU of an interface"""
-        iface = iface if iface else self.config['wifi_iface']
-        if not self.is_interface(iface):
-            return None
-        try:
-            with open(f"/sys/class/net/{iface}/mtu", 'r') as f:
-                return int(f.read().strip())
-        except (IOError, ValueError):
-            return None
+        return self.interface_manager.get_mtu(iface)
 
     def alloc_new_iface(self, prefix=None):
-        """Allocate a new interface name"""
-        prefix = prefix if prefix else self.config['wifi_iface']
-        # if interface is say wlan0 use wlan as the prefix
-        if prefix.split('')[-1].isnumeric():
-            prefix = prefix.rsplit('', 1)[0]
-        i = 0
-        self.lock.mutex_lock()
-        try:
-            while True:
-                iface_name = f"{prefix}{i}"
-                if not self.is_interface(iface_name) and not os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}"):
-                    os.makedirs(f"{self.conf_dir}/ifaces", exist_ok=True)
-                    with open(f"{self.conf_dir}/ifaces/{iface_name}", 'w'):
-                        pass  # Just create the file
-                    self.lock.mutex_unlock()
-                    return iface_name
-                i += 1
-        finally:
-            self.lock.mutex_unlock()
+        return self.interface_manager.alloc_new_iface(prefix)
 
     def dalloc_iface(self, iface=None):
-        """Allocate a new interface name"""
-        prefix = iface if iface else self.config['wifi_iface']
-        # if interface is say wlan0 use wlan as the prefix
-        if prefix.split('')[-1].isnumeric():
-            prefix = prefix.rsplit('', 1)[0]
-
-        i = 0
-        self.lock.mutex_lock()
-        try:
-            while True:
-                iface_name = f"{prefix}{i}"
-                if not self.is_interface(iface_name) and not os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}"):
-                    os.remove(f"{self.conf_dir}/ifaces/{iface_name}")
-
-                    self.lock.mutex_unlock()
-                    return iface_name
-                i += 1
-        finally:
-            self.lock.mutex_unlock()
+        return self.interface_manager.dealloc_iface(iface)
 
     @property
     def has_hostapd(self):
@@ -798,427 +535,79 @@ class ApManager:
     def where_hostapd(self):
         return subprocess.run(['which', 'hostapd'], check=True, capture_output=True, text=True).stdout
 
+    # Methods moved to InterfaceManager
     def can_transmit_to_channel(self, iface=None, channel=None):
-        iface = iface if iface else self.config['wifi_iface']
-        channel = channel if channel else self.config['channel']
-
-        if not self.use_iwconfig:
-            # Determine frequency band pattern
-            if self.freq_band == 2.4:
-                pattern = rf" 24[0-9][0-9](?:\.0+)? MHz \[{channel}\]"
-            else:
-                pattern = rf" (49[0-9][0-9]|5[0-9]{{3}})(?:\.0+)? MHz \[{channel}\]"
-
-            # Get adapter info and check channel
-            adapter_info = self.get_adapter_info(iface)
-            channel_info = re.search(pattern, adapter_info)
-
-            if not channel_info:
-                return False
-
-            channel_str = channel_info.group(0)
-            if "no IR" in channel_str or "disabled" in channel_str:
-                return False
-
-            return True
-        else:
-            # Format channel number with leading zero
-            formatted_channel = f"{channel:02d}"
-
-            # Check channel using iwlist
-            iwlist_output = command.run(f"iwlist {iface} channel")
-            pattern = rf"Channel\s+{formatted_channel}\s?:"
-            channel_info = re.search(pattern, iwlist_output)
-
-            return bool(channel_info)
+        return self.interface_manager.can_transmit_to_channel(iface, channel)
 
     def can_be_ap(self, iface=None):
-        # iwconfig does not provide this information, assume true
-        iface = iface if iface else self.config['wifi_iface']
-        if self.use_iwconfig:
-            return True
-
-        adapter_info = self.get_adapter_info(iface)
-        match = re.search(r'#{\s*AP\s?}?', adapter_info)
-        if bool(match):
-            return True
-
-        return False
+        return self.interface_manager.can_be_ap(iface)
 
     def can_be_sta_and_ap(self, iface=None):
-        # iwconfig does not provide this information, assume false
-        iface = iface if iface else self.config['wifi_iface']
-        # if self.use_iwconfig:
-        # return False
-
-        if self.get_adapter_kernel_module(iface) == "brcmfmac":
-            warning = """WARN: brmfmac driver doesn't work properly with virtual interfaces and
-            it can cause kernel panic. For this reason we disallow virtual
-            interfaces for your adapter.
-            For more info: https://github.com/skye-cyber/ap_manager/issues/203"""
-            print(warning)
-            return False
-
-        # Check if adapter supports both STA and AP modes
-        adapter_info = self.get_adapter_info()
-        if re.search(r'#{\s*managed\s*}\s*<?=?\s*[1-9]?\s*,?\s*#{\s*AP,\s*', adapter_info) or re.search(r'{\s*AP\s*managed\s*}', adapter_info):
-            return True
-
-        return False
+        return self.interface_manager.can_be_sta_and_ap(iface)
 
     def get_adapter_kernel_module(self, _iface=None) -> str:
-        iface = _iface if _iface else self.config['wifi_iface']
-        module_path = os.path.realpath(f"/sys/class/net/{iface}/device/driver/module")
-        module_name = os.path.basename(module_path)
-        # print(module_path, module_name)
-        return module_name
+        return self.interface_manager.get_adapter_kernel_module(_iface)
 
     def get_adapter_info(self, iface=None) -> str:
-        iface = iface if iface else self.config['wifi_iface']
-
-        PHY = self.get_phy_device(iface)
-        if not PHY:
-            return None
-
-        result = command.run(['iw', 'phy', PHY, 'info'], capture_output=True, text=True)
-        return result.stdout if result.returncode == 0 else None
+        return self.interface_manager.get_adapter_info(iface)
 
     def get_phy_device(self, iface=None) -> str:
-        t_iface = iface if iface else self.config['wifi_iface']
-        c_dir = '/sys/class/ieee80211/'
-
-        for x in os.listdir(c_dir):
-            if x == t_iface or t_iface in x:  # check partial match
-                return x
-            elif os.path.exists(f"{c_dir}/{x}/device/net/{t_iface}"):
-                return x
-            elif os.path.exists(f"{c_dir}/{x}/device/net:{t_iface}"):
-                return x
-
-        print("Failed to get phy interface")
-        return None
+        return self.interface_manager.get_phy_device(iface)
 
     def is_bridge_interface(self, _iface=None):
-        iface = _iface if _iface else self.config['wifi_iface']
-        return os.path.exists(f"/sys/class/net/{iface}/bridge")
+        return self.interface_manager.is_bridge_interface(_iface)
 
     def is_wifi_interface(self, _iface=None):
-        iface = _iface if _iface else self.config['wifi_iface']
-
-        try:
-            # Check if 'iw' command exists and works
-            if subprocess.run(['which', 'iw'], check=True, capture_output=True).returncode == 0:
-                result = subprocess.run(['iw', 'dev', iface, 'info'], capture_output=True)
-                if result.returncode == 0:
-                    return True
-
-            # Check if 'iwconfig' command exists and works
-            if subprocess.run(['which', 'iwconfig'], check=True, capture_output=True).returncode == 0:
-                result = subprocess.run(['iwconfig', iface], capture_output=True)
-                if result.returncode == 0:
-                    self.use_iwconfig = True
-                    return True
-
-            return False
-        except subprocess.CalledProcessError:
-            return False
+        return self.interface_manager.is_wifi_interface(_iface)
 
     @property
     def get_all_macaddrs(self) -> list:
-        """Get all MAC addresses from all network interfaces"""
-        macs = []
-
-        net_dir = "/sys/class/net/"
-        try:
-            for iface in os.listdir(net_dir):
-                addr_path = os.path.join(net_dir, iface, "address")
-                if os.path.exists(addr_path):
-                    with open(addr_path, 'r') as f:
-                        mac = f.read().strip()
-                        if self.is_macaddr(mac):
-                            macs.append(mac)
-        except OSError:
-            pass
-        return macs
+        return self.interface_manager.get_all_mac_addresses
 
     def get_new_macaddr(self, iface=None):
-        """Generate a new MAC address based on the current one"""
-        iface = iface if iface else self.config['wifi_iface']
+        return self.interface_manager.get_new_mac_address(iface)
 
-        old_mac = self.get_macaddr(iface)
-        if not old_mac:
-            return None
-
-        # Extract the last byte and convert to integer
-        last_byte_hex = old_mac.split(':')[-1]
-        last_byte = int(last_byte_hex, 16)
-
-        self.lock.mutex_lock()
-        try:
-            for i in range(1, 256):
-                new_byte = (last_byte + i) % 256
-                new_mac = f"{old_mac.rsplit(':', 1)[0]}:{new_byte:02x}"
-
-                # Check if MAC address is already in use
-                all_macs = self.get_all_macaddrs
-                if new_mac not in all_macs:
-                    return new_mac
-        finally:
-            self.lock.mutex_unlock()
-
-        return None
-
+    # Methods moved to ProcessManager
     def haveged_watchdog(self):
-        """Monitor system entropy and start haveged if needed"""
-        show_warn = True
-        while True:
-            try:
-                with open('/proc/sys/kernel/random/entropy_avail', 'r') as f:
-                    entropy = int(f.read().strip())
-
-                if entropy < 1000:
-                    if not self.is_haveged_installed():
-                        if show_warn:
-                            print("WARN: Low entropy detected. We recommend you to install 'haveged'")
-                            show_warn = False
-                    elif not self.is_haveged_running():
-                        print("Low entropy detected, starting haveged")
-                        self.lock.mutex_lock()
-                        try:
-                            # Start haveged with a specific PID file
-                            subprocess.Popen(['sudo', 'haveged', '-w', '1024', '-p',
-                                              os.path.join(self.conf_dir, 'haveged.pid')])
-                        finally:
-                            self.lock.mutex_unlock()
-            except (IOError, ValueError):
-                pass
-
-            time.sleep(2)
+        self.process_manager.start_haveged_watchdog()
 
     def is_haveged_installed(self):
-        """Check if haveged is installed"""
-        try:
-            command.run(['which', 'haveged'],
-                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return True
-        except subprocess.CalledProcessError:
-            return False
+        return self.process_manager.is_haveged_installed()
 
     def is_haveged_running(self):
-        """Check if haveged is running (HAVE GEnerated Daemon)"""
-        try:
-            command.run(['pidof', 'haveged'],
-                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return True
-        except subprocess.CalledProcessError:
-            return False
+        return self.process_manager.is_haveged_running()
 
     def start_haveged_watchdog(self):
-        """Start the haveged watchdog in a background thread"""
-        thread = Thread(target=self.haveged_watchdog, daemon=True)
-        thread.start()
-        return thread
+        return self.process_manager.start_haveged_watchdog()
 
+    # Methods moved to ProcessManager
     def get_wifi_iface_from_pid(self, pid: str) -> Optional[str]:
-        """Get the WiFi interface associated with a process ID."""
-        running = self.list_running()
-        for entry in running:
-            parts = entry.split()
-            if parts[0] == pid:
-                # Return the last field (interface name)
-                return parts[-1].rstrip(')')
-        return None
+        return self.process_manager.get_wifi_iface_from_pid(pid)
 
     def get_pid_from_wifi_iface(self, wifi_iface: str) -> Optional[str]:
-        """Get the process ID associated with a WiFi interface."""
-        running = self.list_running()
-        for entry in running:
-            parts = entry.split()
-            if wifi_iface in parts[-1]:
-                return parts[0]
-        return None
+        return self.process_manager.get_pid_from_wifi_iface(wifi_iface)
 
     def get_confdir_from_pid(self, pid: str) -> Optional[str]:
-        """Get the configuration directory for a process ID."""
-        self.lock.mutex_lock()
-        try:
-            for conf_dir in self.list_running_conf():
-                pid_file = os.path.join(conf_dir, 'pid')
-                if os.path.exists(pid_file):
-                    with open(pid_file, 'r') as f:
-                        if f.read().strip() == pid:
-                            return conf_dir
-            return None
-        finally:
-            self.lock.mutex_unlock()
+        return self.process_manager.get_confdir_from_pid(pid)
 
     def print_client(self, mac: str) -> None:
-        """Print client information in a formatted way."""
-        ipaddr = "*"
-        hostname = "*"
-
-        # Check dnsmasq leases file
-        dnsmasq_leases = os.path.join(self.conf_dir, 'dnsmasq.leases')
-        if os.path.exists(dnsmasq_leases):
-            with open(dnsmasq_leases, 'r') as f:
-                for line in f:
-                    if mac in line:
-                        parts = line.strip().split()
-                        if len(parts) >= 4:
-                            ipaddr = parts[2]
-                            hostname = parts[3]
-
-        print(f"{mac:<20} {ipaddr:<18} {hostname}")
+        self.process_manager.print_client(mac)
 
     def list_clients(self, pid_or_iface: str) -> None:
-        """List all clients connected to a specific instance."""
-        wifi_iface = ""
-        pid = ""
+        self.process_manager.list_clients(pid_or_iface)
 
-        # If argument is a PID, get the associated WiFi interface
-        if pid_or_iface.isdigit():
-            pid = pid_or_iface
-            wifi_iface = self.get_wifi_iface_from_pid(pid)
-            if not wifi_iface:
-                sys.exit(f"Error: '{pid}' is not the PID of a running {self.prog_name} instance.")
-        else:
-            wifi_iface = pid_or_iface
-
-        # Verify it's a WiFi interface
-        if not self.is_wifi_interface(wifi_iface):
-            sys.exit(f"Error: '{wifi_iface}' is not a WiFi interface.")
-
-        # Get PID if not already set
-        if not pid:
-            pid = self.get_pid_from_wifi_iface(wifi_iface)
-            if not pid:
-                sys.exit(f"Error: '{wifi_iface}' is not used from {self.prog_name} instance.\n"
-                         f"Maybe you need to pass the virtual interface instead.\n"
-                         f"Use --list-running to find it out.")
-
-        # Get configuration directory
-        self.conf_dir = self.get_confdir_from_pid(pid)
-        if not self.conf_dir:
-            sys.exit(f"Error: Could not find configuration directory for PID {pid}")
-
-        # List clients using iw if available
-        if not self.config.get('use_iwconfig', False):
-            try:
-                result = command.run(
-                    ['iw', 'dev', wifi_iface, 'station', 'dump'],
-                    capture_output=True, text=True, check=True
-                )
-
-                # Extract MAC addresses
-                macs = []
-                for line in result.stdout.splitlines():
-                    if 'Station' in line:
-                        mac = line.split()[1]
-                        macs.append(mac)
-
-                if not macs:
-                    print("No clients connected")
-                    return
-
-                # Print header
-                print(f"{'MAC':<20} {'IP':<18} {'Hostname'}")
-
-                # Print each client
-                for mac in macs:
-                    self.print_client(mac)
-
-                return
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                pass
-
-        # Fallback to error if iwconfig is required
-        sys.exit("Error: This option is not supported for the current driver.")
-
+    # Methods moved to ProcessManager
     def has_running_instance(self) -> bool:
-        """Check if there are any running instances."""
-        self.lock.mutex_lock()
-        try:
-            for proc_item in os.listdir(self.proc_dir):
-                pid_file = os.path.join(self.proc_dir, proc_item)
-                if os.path.exists(pid_file):
-                    with open(pid_file, 'r') as f:
-                        pid = f.read().strip()
-                    if os.path.exists(f'/proc/{pid}'):
-                        return True
-            return False
-        finally:
-            self.lock.mutex_unlock()
+        return self.process_manager.has_running_instance()
 
     def is_running_pid(self, pid: str) -> bool:
-        """Check if a specific PID is running."""
-        running = self.list_running()
-        for entry in running:
-            if entry.startswith(pid):
-                return True
-        return False
+        return self.process_manager.is_running_pid(pid)
 
     def list_running_conf(self) -> List[str]:
-        """List all running configuration directories."""
-        self.lock.mutex_lock()
-
-        try:
-            running_confs = []
-            for item in os.listdir(self.conf_dir):
-                # all instance files have ap_manager prefix
-                if item.endswith('.json') or 'ap_manager' not in item:
-                    continue  # Skip json configs
-                pid_file = os.path.join(self.proc_dir, item)
-                wifi_iface_file = os.path.join(self.conf_dir, item.strip('.pid'), 'wifi_iface')
-
-                if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
-                    with open(pid_file, 'r') as f:
-                        pid = f.read().strip()
-                    if os.path.exists(f'/proc/{pid}'):
-                        running_confs.append(os.path.join(self.conf_dir, item))  # Append the interface conf item
-            return running_confs
-        finally:
-            self.lock.mutex_unlock()
+        return self.process_manager.list_running_conf()
 
     def list_running(self) -> List[str]:
-        """List all running instances with their interfaces."""
-        self.lock.mutex_lock()
-        try:
-            running_instances = []
-            for conf in self.list_running_conf():
-                iface = os.path.basename(conf)
-                pid_file = os.path.join(self.proc_dir, iface)
-                iface_file = os.path.join(conf, conf.strip('.pid'), 'wifi_iface')
-
-                pid = None
-                if os.path.exists(pid_file):
-                    with open(pid_file, 'r') as f:
-                        pid = f.read().strip()
-
-                if os.path.exists(iface_file):
-                    with open(os.path.join(conf, 'wifi_iface'), 'r') as f:
-                        wifi_iface = f.read().strip()
-
-                if (iface and wifi_iface) and iface == wifi_iface:
-                    running_instances.append(f"{pid} {iface} ({wifi_iface})")
-                # else:
-                # running_instances.append(f"{pid} {iface} ({wifi_iface})")
-            return running_instances
-        finally:
-            self.lock.mutex_unlock()
+        return self.process_manager.list_running()
 
     def send_stop(self, pid_or_iface: str) -> None:
-        """Send stop signal to a specific instance."""
-        self.lock.mutex_lock()
-        try:
-            # Try to send stop to specific PID
-            if self.is_running_pid(pid_or_iface):
-                os.kill(int(pid_or_iface), signal.SIGUSR1)
-                return
-
-            # Try to send stop to specific interface
-            for entry in self.list_running():
-                parts = entry.split()
-                if pid_or_iface in parts[-1]:
-                    os.kill(int(parts[0]), signal.SIGUSR1)
-        finally:
-            self.lock.mutex_unlock()
+        self.process_manager.send_stop_signal(pid_or_iface)
