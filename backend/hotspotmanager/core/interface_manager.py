@@ -10,6 +10,7 @@ import uuid
 from ap_utils.colors import fg
 from ap_utils.command import command
 from ap_utils.copy import cp_n_safe
+from .services import netservice
 
 
 class InterfaceManager:
@@ -109,8 +110,12 @@ class InterfaceManager:
             except Exception as e:
                 self.clean.die(f"Failed to update configuration: {str(e)}")
 
+            netservice.configure()
+
             # Create virtual interface
             self.create_virtual_interface()
+
+            netservice.start()
 
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
