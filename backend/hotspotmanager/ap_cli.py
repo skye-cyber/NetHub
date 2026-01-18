@@ -11,7 +11,6 @@ from ap_utils.colors import fg
 
 version = "1.0.0"
 
-
 def config_update(args):
     try:
         args_dict = args.__dict__

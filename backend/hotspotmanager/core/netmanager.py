@@ -55,22 +55,34 @@ class NetworkManager:
         return 0
 
     def networkmanager_exists(self) -> bool:
-        """Check if NetworkManager is installed and get its version."""
+        """Check if NetworkManager is installed and determine if it's an older version.
+
+        Returns:
+            bool: True if NetworkManager is installed, False otherwise
+            Also sets NM_OLDER_VERSION global if version is checked successfully
+        """
         global NM_OLDER_VERSION
 
         try:
+            # Check if nmcli exists
             subprocess.run(['which', 'nmcli'],
-                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError:
-            return False
+                           check=True,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
 
-        try:
+            # Get NetworkManager version
             result = subprocess.run(['nmcli', '-v'],
-                                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                    check=True,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True)
+
+            # Extract version number
             nm_ver = re.search(r'[0-9]+(\.[0-9]+)*\.[0-9]+', result.stdout)
             if nm_ver:
-                NM_OLDER_VERSION = self.version_cmp(nm_ver.group(0), "0.9.9") == 1
+                NM_OLDER_VERSION = self.version_cmp(nm_ver.group(0), "0.9.9") == 2
                 return True
+
         except (subprocess.CalledProcessError, AttributeError):
             return False
 
@@ -352,7 +364,7 @@ class NetworkManager:
         return False
 
     def rfkill_off(self):
-        return command.run(['sudo', 'rfkill', 'unblock', 'phy0'], check=True)
+        return subprocess.run(['sudo', 'rfkill', 'unblock', 'phy0'], check=True)
 
 
 netmanager = NetworkManager(ap_man=None)

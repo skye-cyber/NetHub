@@ -111,7 +111,7 @@ class ApManager:
 
             # Configure services
             try:
-                self.init_wifi_iface()
+                self.interface_manager.initialize_wifi_interface()
             except Exception as e:
                 self.clean.die(f"Failed to configure services: {str(e)}")
 
@@ -126,70 +126,6 @@ class ApManager:
         if self.config['no_haveged']:
             self.haveged_watchdog()
             # HAVEGED_WATCHDOG_PID =
-
-    def init_wifi_iface(self):
-        """Initialize the WiFi interface with proper configuration."""
-        print("Init wifi")
-        try:
-            # Set MAC address if virtualization is enabled and MAC is specified
-            if not self.config.get('no_virt', False) and self.config.get('mac'):
-                command.run([
-                    'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
-                    'address', self.config['mac']
-                ], check=True)
-
-            print('Flush addresses')
-            # Bring interface down and flush addresses
-            command.run([
-                'ip', 'link', 'set', 'down', 'dev', self.config['wifi_iface']
-            ], check=True)
-
-            command.run([
-                'ip', 'addr', 'flush', self.config['wifi_iface']
-            ], check=True)
-            print("set MAC")
-            # Set MAC address if virtualization is disabled and MAC is specified
-            if self.config.get('no_virt', False) and self.config.get('mac'):
-                command.run([
-                    'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
-                    'address', self.config['mac']
-                ], check=True)
-
-            # Configure interface for non-bridge sharing method
-            print('Configure interface for non-bridge sharing method')
-            if self.config.get('share_method', 'none') != 'bridge':
-                # Bring interface up
-                print(" - Bring interface up\n")
-
-                def bring_interface_up():
-                    return command.run([
-                        'ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']
-                    ], check=True, force_return=True)
-
-                result = bring_interface_up()
-                print(result)
-                if not result or isinstance(result, dict) and result['status'] == 'error':
-                    command.run(['sudo', 'rfkill', 'unblock', 'all'], check=True)
-                    bring_interface_up()
-
-                # Set IP address and broadcast
-                print(" - Set IP address and broadcast\n")
-                gateway = self.config['gateway']
-                broadcast = f"{'.'.join(gateway.split('.')[:3])}.255"
-
-                command.run([
-                    'ip', 'addr', 'add', f"{gateway}/24",
-                    'broadcast', broadcast,
-                    'dev', self.config['wifi_iface']
-                ], check=True)
-
-            return True
-
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to initialize WiFi interface: {str(e)}"
-            if hasattr(self, 'virt_diems'):
-                error_msg += f"\n{self.virt_diems}"
-            self.clean.die(error_msg)
 
     # Method moved to InterfaceManager
     def make_unmanaged(self):

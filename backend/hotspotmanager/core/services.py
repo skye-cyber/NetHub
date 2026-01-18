@@ -19,7 +19,7 @@ class NetServices:
         self.config = config_manager.get_config
 
     def configure(self):
-        print("configuring")
+        print("Configuring")
         self.configure_hostapd()
 
         # Configure dnsmasq if not using bridge and not disabled
@@ -51,22 +51,22 @@ class NetServices:
                 "max_num_sta=25",
 
                 # Performance Optimization
-                "wmm_enabled=1",
-                "wmm_ac_bk_cwmin=4",
-                "wmm_ac_bk_cwmax=10",
-                "wmm_ac_bk_aifs=7",
-                "wmm_ac_be_aifs=3",
-                "wmm_ac_be_cwmin=4",
-                "wmm_ac_be_cwmax=10",
-                "wmm_ac_vi_aifs=2",
-                "wmm_ac_vi_cwmin=3",
-                "wmm_ac_vi_cwmax=4",
-                "wmm_ac_vo_aifs=2",
-                "wmm_ac_vo_cwmin=2",
-                "wmm_ac_vo_cwmax=3",
+                # "wmm_enabled=1",
+                # "wmm_ac_bk_cwmin=4",
+                # "wmm_ac_bk_cwmax=10",
+                # "wmm_ac_bk_aifs=7",
+                # "wmm_ac_be_aifs=3",
+                # "wmm_ac_be_cwmin=4",
+                # "wmm_ac_be_cwmax=10",
+                # "wmm_ac_vi_aifs=2",
+                # "wmm_ac_vi_cwmin=3",
+                # "wmm_ac_vi_cwmax=4",
+                # "wmm_ac_vo_aifs=2",
+                # "wmm_ac_vo_cwmin=2",
+                # "wmm_ac_vo_cwmax=3",
 
                 # 802.11n Support (HT)
-                # ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]
+                "ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]",
 
                 # 802.11ac Support (VHT) - if supported by your hardware
                 # ieee80211ac=1
@@ -79,15 +79,15 @@ class NetServices:
                 "auth_algs=1",
 
                 # Logging and Debugging
-                "logger_syslog=-1",
-                "logger_syslog_level=2",
-                "logger_stdout=-1",
-                "logger_stdout_level=2",
+                # "logger_syslog=-1",
+                # "logger_syslog_level=2",
+                # "logger_stdout=-1",
+                # "logger_stdout_level=2",
 
                 # Advanced Settings
-                "eapol_key_index_workaround=0",
-                "eap_server=0",
-                "own_ip_addr=127.0.0.1",
+                # "eapol_key_index_workaround=0",
+                # "eap_server=0",
+                # "own_ip_addr=127.0.0.1",
             ]
 
             # Write basic configuration
@@ -273,14 +273,15 @@ class NetServices:
             with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
                 f.write(str(self.hostapd_pid))
 
+                print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
+
             # Wait for the process to complete
             return_code = self.hostapd_process.wait()
 
             if return_code != 0:
                 # Print error message if hostapd failed
-                error_msg = self.hostapd_process.stderr.read() if self.hostapd_process.stderr else ""
+                # error_msg = self.hostapd_process.stderr.read() if self.hostapd_process.stderr else ""
                 print(f"Error: {fg.RED}{self.hostapd_process.stderr.read() or self.hostapd_process.stdout.read()}{fg.RESET}")
-                print(f"Hostapd error output:\n{error_msg}")
 
                 # NetworkManager specific suggestions
                 if netmanager.networkmanager_is_running():

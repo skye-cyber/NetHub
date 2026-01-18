@@ -9,6 +9,7 @@ import subprocess
 import sys
 from typing import Optional, List
 from .lock import lock
+import time
 
 
 class ProcessManager:
@@ -16,10 +17,10 @@ class ProcessManager:
         """Initialize ProcessManager with reference to main AP manager"""
         self.ap_manager = ap_manager
         self.config = ap_manager.config
-        self.lock = ap_manager.lock
+        self.lock = lock
         self.netmanager = ap_manager.netmanager
         self.clean = ap_manager.clean
-        
+
         # Configuration paths
         self.conf_dir = self.config.get('conf_dir', ap_manager.config_manager.__bconfdir__)
         self.proc_dir = self.config['proc_dir']
@@ -50,7 +51,7 @@ class ProcessManager:
     def list_running_conf(self) -> List[str]:
         """List all running configuration directories"""
         self.lock.mutex_lock()
-        
+
         try:
             running_confs = []
             for item in os.listdir(self.conf_dir):
@@ -59,7 +60,7 @@ class ProcessManager:
                     continue  # Skip json configs
                 pid_file = os.path.join(self.proc_dir, item)
                 wifi_iface_file = os.path.join(self.conf_dir, item.strip('.pid'), 'wifi_iface')
-                
+
                 if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
                     with open(pid_file, 'r') as f:
                         pid = f.read().strip()
@@ -78,16 +79,16 @@ class ProcessManager:
                 iface = os.path.basename(conf)
                 pid_file = os.path.join(self.proc_dir, iface)
                 iface_file = os.path.join(conf, conf.strip('.pid'), 'wifi_iface')
-                
+
                 pid = None
                 if os.path.exists(pid_file):
                     with open(pid_file, 'r') as f:
                         pid = f.read().strip()
-                
+
                 if os.path.exists(iface_file):
                     with open(os.path.join(conf, 'wifi_iface'), 'r') as f:
                         wifi_iface = f.read().strip()
-                
+
                 if (iface and wifi_iface) and iface == wifi_iface:
                     running_instances.append(f"{pid} {iface} ({wifi_iface})")
                 # else:
@@ -137,7 +138,7 @@ class ProcessManager:
             if self.is_running_pid(pid_or_iface):
                 os.kill(int(pid_or_iface), signal.SIGUSR1)
                 return
-            
+
             # Try to send stop to specific interface
             for entry in self.list_running():
                 parts = entry.split()
@@ -150,7 +151,7 @@ class ProcessManager:
         """Print client information in a formatted way"""
         ipaddr = "*"
         hostname = "*"
-        
+
         # Check dnsmasq leases file
         dnsmasq_leases = os.path.join(self.conf_dir, 'dnsmasq.leases')
         if os.path.exists(dnsmasq_leases):
@@ -161,14 +162,14 @@ class ProcessManager:
                         if len(parts) >= 4:
                             ipaddr = parts[2]
                             hostname = parts[3]
-        
+
         print(f"{mac:<20} {ipaddr:<18} {hostname}")
 
     def list_clients(self, pid_or_iface: str) -> None:
         """List all clients connected to a specific instance"""
         wifi_iface = ""
         pid = ""
-        
+
         # If argument is a PID, get the associated WiFi interface
         if pid_or_iface.isdigit():
             pid = pid_or_iface
@@ -177,11 +178,11 @@ class ProcessManager:
                 sys.exit(f"Error: '{pid}' is not the PID of a running {self.ap_manager.prog_name} instance.")
         else:
             wifi_iface = pid_or_iface
-        
+
         # Verify it's a WiFi interface
         if not self.ap_manager.is_wifi_interface(wifi_iface):
             sys.exit(f"Error: '{wifi_iface}' is not a WiFi interface.")
-        
+
         # Get PID if not already set
         if not pid:
             pid = self.get_pid_from_wifi_iface(wifi_iface)
@@ -189,49 +190,49 @@ class ProcessManager:
                 sys.exit(f"Error: '{wifi_iface}' is not used from {self.ap_manager.prog_name} instance.\n"
                          f"Maybe you need to pass the virtual interface instead.\n"
                          f"Use --list-running to find it out.")
-        
+
         # Get configuration directory
         self.conf_dir = self.get_confdir_from_pid(pid)
         if not self.conf_dir:
             sys.exit(f"Error: Could not find configuration directory for PID {pid}")
-        
+
         # List clients using iw if available
         if not self.config.get('use_iwconfig', False):
             try:
-                result = command.run(
+                result = subprocess.run(
                     ['iw', 'dev', wifi_iface, 'station', 'dump'],
                     capture_output=True, text=True, check=True
                 )
-                
+
                 # Extract MAC addresses
                 macs = []
                 for line in result.stdout.splitlines():
                     if 'Station' in line:
                         mac = line.split()[1]
                         macs.append(mac)
-                
+
                 if not macs:
                     print("No clients connected")
                     return
-                
+
                 # Print header
                 print(f"{'MAC':<20} {'IP':<18} {'Hostname'}")
-                
+
                 # Print each client
                 for mac in macs:
                     self.print_client(mac)
-                
+
                 return
             except (subprocess.CalledProcessError, FileNotFoundError):
                 pass
-        
+
         # Fallback to error if iwconfig is required
         sys.exit("Error: This option is not supported for the current driver.")
 
     def start_haveged_watchdog(self):
         """Start the haveged watchdog in a background thread"""
         from threading import Thread
-        
+
         def haveged_watchdog():
             """Monitor system entropy and start haveged if needed"""
             show_warn = True
@@ -239,7 +240,7 @@ class ProcessManager:
                 try:
                     with open('/proc/sys/kernel/random/entropy_avail', 'r') as f:
                         entropy = int(f.read().strip())
-                    
+
                     if entropy < 1000:
                         if not self.is_haveged_installed():
                             if show_warn:
@@ -256,9 +257,9 @@ class ProcessManager:
                                 self.lock.mutex_unlock()
                 except (IOError, ValueError):
                     pass
-                
+
                 time.sleep(2)
-        
+
         thread = Thread(target=haveged_watchdog, daemon=True)
         thread.start()
         return thread
@@ -266,8 +267,8 @@ class ProcessManager:
     def is_haveged_installed(self):
         """Check if haveged is installed"""
         try:
-            command.run(['which', 'haveged'],
-                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(['which', 'haveged'],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -275,8 +276,8 @@ class ProcessManager:
     def is_haveged_running(self):
         """Check if haveged is running (HAVE GEnerated Daemon)"""
         try:
-            command.run(['pidof', 'haveged'],
-                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(['pidof', 'haveged'],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         except subprocess.CalledProcessError:
             return False

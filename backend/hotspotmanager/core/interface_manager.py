@@ -123,9 +123,9 @@ class InterfaceManager:
                 iface_dir = os.path.join(self.conf_dir, pid_file.strip('.pid'))
                 os.makedirs(iface_dir, exist_ok=True)
 
-                wifi_iface_file = os.path.join(iface_dir, 'wifi_iface')
+                wifi_iface_file = os.path.join(iface_dir, 'vwifi_iface')
                 with open(wifi_iface_file, 'w') as f:
-                    f.write(self.config['wifi_iface'])
+                    f.write(self.config['vwifi_iface'])
                 os.chmod(wifi_iface_file, 0o444)
             finally:
                 self.lock.mutex_unlock()
@@ -153,26 +153,26 @@ class InterfaceManager:
 
     def setup_frequency_and_channel(self):
         """Set correct frequency and channel for the WiFi interface"""
-        if self.is_wifi_connected(self.config['wifi_iface']):
+        if self.is_wifi_connected(self.config['vwifi_iface']):
             if not self.config['freq_band']:
-                wifi_iface_freq = self.netmanager._get_interface_freq_(self.config['wifi_iface'])
+                wifi_iface_freq = self.netmanager._get_interface_freq_(self.config['vwifi_iface'])
                 wifi_iface_channel = self.ieee80211_frequency_to_channel(wifi_iface_freq)
 
-                print(f"{self.config['wifi_iface']} is already associated with channel "
+                print(f"{self.config['vwifi_iface']} is already associated with channel "
                       f"{wifi_iface_channel} ({wifi_iface_freq} MHz)")
 
                 self.config.update({'freq_band': 5}) if self.is_5ghz_frequency(wifi_iface_freq) else self.config.update({'freq_band': 2.4})
 
                 if wifi_iface_channel != wifi_iface_channel:
                     if self._get_channels_() >= 2 and self.can_transmit_to_channel(
-                        self.config['wifi_iface'], self.config['channel']
+                        self.config['vwifi_iface'], self.config['channel']
                     ):
                         print("multiple channels supported")
                     else:
                         # Fallback to currently connected channel
                         print(f"multiple channels not supported, fallback to channel: {wifi_iface_channel}")
                         self.config.update({'channel': wifi_iface_channel})
-                        if self.can_transmit_to_channel(self.config['wifi_iface'], self.config['channel']):
+                        if self.can_transmit_to_channel(self.config['vwifi_iface'], self.config['channel']):
                             print(f"Transmitting to channel {self.config['channel']}...")
                         else:
                             self.clean.die(
@@ -186,20 +186,19 @@ class InterfaceManager:
 
     def create_virtual_interface(self):
         """Create a virtual WiFi interface with proper configuration"""
-        print("Creating a virtual WiFi interface... ", end='')
-
         try:
-            # Actually create the virtual interface using iw command
-            result = command.run(
-                ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
-                    self.config['vwifi_iface'], 'type', '__ap'],
-                check=True, capture_output=True, text=True, force_return=True
-            )
+            if not self.interface_exists(self.config['vwifi_iface']):
+                print("Creating a virtual WiFi interface... ", end='')
+                # Actually create the virtual interface using iw command
+                command.run(
+                    ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
+                        self.config['vwifi_iface'], 'type', '__ap'],
+                    check=True, capture_output=True, text=True, force_return=True
+                )
+            else:
+                print("Virtual wifi interface exist: skipping ...")
 
-            if not result or isinstance(result, dict) and result['status'] == 'error':
-                print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
-                # print(f"{fg.FBLUE}Falling back to hostapd{fg.RESET}")
-                # self.config_hostapd()
+            print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
 
             print(f"\n{fg.LWHITE}{fg.DWHITE}Interface\tStatus{fg.RESET}")
             print(f"{fg.BLUE}{self.config['vwifi_iface']}\t\t{fg.BGREEN}Ready{fg.RESET}\n")
@@ -221,7 +220,7 @@ class InterfaceManager:
                 self.config['mac'] = new_mac
 
             # Update configuration with new interface and MAC
-            self.config['wifi_iface'] = self.config['vwifi_iface']
+            self.config['vwifi_iface'] = self.config['vwifi_iface']
 
         except Exception as e:
             self.clean.die(f"{fg.RED}Error during virtual interface creation: "
@@ -230,40 +229,43 @@ class InterfaceManager:
     def make_interface_unmanaged(self):
         """Make the WiFi interface unmanaged by NetworkManager"""
         if (self.netmanager.networkmanager_exists()
-                and self.netmanager.networkmanager_iface_is_unmanaged(self.config['wifi_iface'])):
-            print(f"Network Manager found, set {self.config['wifi_iface']} as unmanaged device... ")
-            self.netmanager.networkmanager_add_unmanaged(self.config['wifi_iface'])
+                and not self.netmanager.networkmanager_iface_is_unmanaged(self.config['vwifi_iface'])):
+            print(f"Network Manager found, set {self.config['vwifi_iface']} as unmanaged device... ")
+            unmanaged = self.netmanager.networkmanager_add_unmanaged(self.config['vwifi_iface'])
+            print(f"{fg.BYELLOW}{self.config['vwifi_iface']}{fg.RESET} State: {fg.GREEN}{'unmanaged' if unmanaged else 'managed'}{fg.RESET}")
 
             if self.netmanager.networkmanager_is_running():
-                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['wifi_iface']):
+                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
                     self.clean.die("Failed to wait for interface to be unmanaged")
                 print(" - DONE")
+        else:
+            print("NetworkMnager not found")
 
     def initialize_wifi_interface(self):
         """Initialize the WiFi interface with proper configuration"""
-        print("Init wifi")
+        print("Initialize wifi", self.config['vwifi_iface'], self.config['wifi_iface'])
         try:
             # Set MAC address if virtualization is enabled and MAC is specified
             if not self.config.get('no_virt', False) and self.config.get('mac'):
                 command.run([
-                    'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
+                    'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
 
             print('Flush addresses')
             # Bring interface down and flush addresses
             command.run([
-                'ip', 'link', 'set', 'down', 'dev', self.config['wifi_iface']
+                'ip', 'link', 'set', 'down', 'dev', self.config['vwifi_iface']
             ], check=True)
 
             command.run([
-                'ip', 'addr', 'flush', self.config['wifi_iface']
+                'ip', 'addr', 'flush', self.config['vwifi_iface']
             ], check=True)
 
             # Set MAC address if virtualization is disabled and MAC is specified
             if self.config.get('no_virt', False) and self.config.get('mac'):
                 command.run([
-                    'ip', 'link', 'set', 'dev', self.config['wifi_iface'],
+                    'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
 
@@ -275,8 +277,9 @@ class InterfaceManager:
 
                 def bring_interface_up():
                     return command.run([
-                        'ip', 'link', 'set', 'up', 'dev', self.config['wifi_iface']
+                        'ip', 'link', 'set', 'up', 'dev', self.config['vwifi_iface']
                     ], check=True, force_return=True)
+                    print("Done", self.config['vwifi_iface'])
 
                 result = bring_interface_up()
                 if not result or isinstance(result, dict) and result['status'] == 'error':
@@ -291,7 +294,7 @@ class InterfaceManager:
                 command.run([
                     'ip', 'addr', 'add', f"{gateway}/24",
                     'broadcast', broadcast,
-                    'dev', self.config['wifi_iface']
+                    'dev', self.config['vwifi_iface']
                 ], check=True)
 
             return True
@@ -338,7 +341,7 @@ class InterfaceManager:
 
     def is_wifi_connected(self, iface=None):
         """Check if WiFi interface is connected"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
 
         if not self.ap_manager.use_iwconfig:
             try:
@@ -372,12 +375,12 @@ class InterfaceManager:
 
     def is_interface(self, iface=None):
         """Check if interface exists"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
         return os.path.exists(f"/sys/class/net/{iface}")
 
     def get_mac_address(self, iface=None):
         """Get MAC address of an interface"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
         if not self.is_interface(iface):
             return None
         try:
@@ -388,7 +391,7 @@ class InterfaceManager:
 
     def get_mtu(self, iface=None) -> int:
         """Get MTU of an interface"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
         if not self.is_interface(iface):
             return None
         try:
@@ -399,7 +402,7 @@ class InterfaceManager:
 
     def alloc_new_iface(self, prefix=None):
         """Allocate a new interface name"""
-        prefix = prefix if prefix else self.config['wifi_iface']
+        prefix = prefix if prefix else self.config['vwifi_iface']
         # if interface is say wlan0 use wlan as the prefix
         if prefix.split('')[-1].isnumeric():
             prefix = prefix.rsplit('', 1)[0]
@@ -420,7 +423,7 @@ class InterfaceManager:
 
     def dealloc_iface(self, iface=None):
         """Deallocate a new interface name"""
-        prefix = iface if iface else self.config['wifi_iface']
+        prefix = iface if iface else self.config['vwifi_iface']
         # if interface is say wlan0 use wlan as the prefix
         if prefix.split('')[-1].isnumeric():
             prefix = prefix.rsplit('', 1)[0]
@@ -440,7 +443,7 @@ class InterfaceManager:
 
     def can_transmit_to_channel(self, iface=None, channel=None):
         """Check if interface can transmit to specified channel"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
         channel = channel if channel else self.config['channel']
 
         if not self.ap_manager.use_iwconfig:
@@ -475,7 +478,7 @@ class InterfaceManager:
 
     def can_be_ap(self, iface=None):
         """Check if interface can be an access point"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
         if self.ap_manager.use_iwconfig:
             return True
 
@@ -485,7 +488,7 @@ class InterfaceManager:
 
     def can_be_sta_and_ap(self, iface=None):
         """Check if interface can be both station and access point"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
 
         if self.get_adapter_kernel_module(iface) == "brcmfmac":
             warning = """WARN: brmfmac driver doesn't work properly with virtual interfaces and
@@ -505,7 +508,7 @@ class InterfaceManager:
 
     def get_adapter_kernel_module(self, _iface=None) -> str:
         """Get the kernel module for the WiFi adapter"""
-        iface = _iface if _iface else self.config['wifi_iface']
+        iface = _iface if _iface else self.config['vwifi_iface']
         module_path = os.path.realpath(f"/sys/class/net/{iface}/device/driver/module")
         module_name = os.path.basename(module_path)
         return module_name
@@ -537,9 +540,39 @@ class InterfaceManager:
         print("Failed to get phy interface")
         return None
 
+    def __get_phy_device__(self, iface=None) -> str:
+        t_iface = iface if iface else self.config['wifi_iface']
+        c_dir = '/sys/class/ieee80211/'
+
+        # Check if the interface exists directly
+        if t_iface in os.listdir(c_dir):
+            return t_iface
+
+        # Check for partial matches
+        for x in os.listdir(c_dir):
+            if t_iface in x:
+                return x
+
+            # Check for net device links
+            net_path = f"{c_dir}/{x}/device/net/{t_iface}"
+            if os.path.exists(net_path):
+                return x
+
+            # Check for alternative net device path
+            net_path = f"{c_dir}/{x}/device/net:{t_iface}"
+            if os.path.exists(net_path):
+                return x
+
+        # Check if the physical interface exists but isn't linked
+        if 'phy0' in os.listdir(c_dir):
+            return 'phy0'
+
+        print("Failed to get phy interface - no wireless devices found")
+        return None
+
     def is_bridge_interface(self, _iface=None):
         """Check if interface is a bridge interface"""
-        iface = _iface if _iface else self.config['wifi_iface']
+        iface = _iface if _iface else self.config['vwifi_iface']
         return os.path.exists(f"/sys/class/net/{iface}/bridge")
 
     def is_wifi_interface(self, _iface=None):
@@ -564,6 +597,15 @@ class InterfaceManager:
         except subprocess.CalledProcessError:
             return False
 
+    def interface_exists(self, iface=None):
+        if not iface:
+            iface = self.config.get('vwifi_iface', 'xap0')
+
+        net_dir = "/sys/class/net/"
+        interfaces = os.listdir(net_dir)
+
+        return iface in interfaces
+
     def get_all_mac_addresses(self) -> list:
         """Get all MAC addresses from all network interfaces"""
         macs = []
@@ -582,7 +624,7 @@ class InterfaceManager:
 
     def get_new_mac_address(self, iface=None):
         """Generate a new MAC address based on the current one"""
-        iface = iface if iface else self.config['wifi_iface']
+        iface = iface if iface else self.config['vwifi_iface']
 
         old_mac = self.get_mac_address(iface)
         if not old_mac:
@@ -606,3 +648,4 @@ class InterfaceManager:
             self.lock.mutex_unlock()
 
         return None
+
