@@ -18,7 +18,6 @@ from core.process_manager import ProcessManager
 from ap_utils.colors import fg
 from ap_utils.command import command
 from ap_utils.resource import increase_resource_limits
-from core.services import netservice
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -116,7 +115,8 @@ class ApManager:
                 self.clean.die(f"Failed to configure services: {str(e)}")
 
             # Exit cleanly
-            self.clean.clean_exit("Success")
+            print("Success")
+            # self.clean.clean_exit("Success")
 
         except Exception as e:
             self.clean.die(f"Initialization failed: {str(e)}")
@@ -188,7 +188,13 @@ class ApManager:
                     continue
 
                 ifname = line.split(':')[1].strip()
-                itype = 'Ethernet' if 'eth' in ifname else 'Wifi' if 'wlan' in ifname else 'Bridge' if 'br' in ifname else '-'
+                ifype_map = {
+                    'eth' in ifname: "Ethernet",
+                    'wlan' in ifname: "Wifi",
+                    'br' in ifname: "Bridge",
+                    'ap' in ifname: "Access Point"
+                }
+                itype = 'Ethernet' if 'eth' in ifname else 'Wifi' if 'wlan' in ifname else 'Bridge' if 'br' in ifname else 'Access Point' if 'ap' in ifname else '-'
 
                 wifi_ifaces.append({"name": ifname, "state": state, "type": itype})
             return wifi_ifaces
@@ -383,9 +389,11 @@ class ApManager:
 
     def show_status(self):
         """Show hotspot status"""
-        print("\n=== Hotspot Status ===")
+        print(f"\n{fg.BWHITE}{fg.LWHITE}Hotspot Status{fg.RESET}")
         print(f"SSID: {self.config['ssid']}")
-        print(f"Interface: {self.config['wifi_iface']}")
+        print(f"Wifi Interface: {self.config['wifi_iface']}")
+        print(f"Virtual Interface: {self.config['vwifi_iface']}")
+        print(f"Connected to: {self.config['internet_iface']}")
         print(f"Mode: {self.config['mode']}")
         print(f"Gateway: {self.config['gateway']}")
 

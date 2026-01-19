@@ -39,132 +39,74 @@ class NetServices:
 
             # Basic hostapd configuration
             config_lines = [
-                # Basic Configuration
                 f"interface={self.config['vwifi_iface']}",
                 f"ssid={self.config['ssid']}",
                 f"driver={self.config['driver']}",
-                f"channel={self.config['channel']}",
                 f"ctrl_interface={os.path.join(self.conf_dir, 'hostapd_ctrl')}",
                 "ctrl_interface_group=0",
-                "beacon_int=100",
-                "dtim_period=2",
                 "max_num_sta=25",
-
-                # Performance Optimization
-                # "wmm_enabled=1",
-                # "wmm_ac_bk_cwmin=4",
-                # "wmm_ac_bk_cwmax=10",
-                # "wmm_ac_bk_aifs=7",
-                # "wmm_ac_be_aifs=3",
-                # "wmm_ac_be_cwmin=4",
-                # "wmm_ac_be_cwmax=10",
-                # "wmm_ac_vi_aifs=2",
-                # "wmm_ac_vi_cwmin=3",
-                # "wmm_ac_vi_cwmax=4",
-                # "wmm_ac_vo_aifs=2",
-                # "wmm_ac_vo_cwmin=2",
-                # "wmm_ac_vo_cwmax=3",
-
-                # 802.11n Support (HT)
                 "ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]",
-
-                # 802.11ac Support (VHT) - if supported by your hardware
-                # ieee80211ac=1
-                # vht_oper_chwidth=1
-                # vht_capab=[MAX-MPDU-11454][SHORT-GI-80]
-
-                # Quality of Service
-                f"ap_isolate={int(self.config.get('isolate_clients', False))}"
-                f"ignore_broadcast_ssid={False}",  # int(self.config.get('hidden', False))
                 "auth_algs=1",
-
-                # Logging and Debugging
-                # "logger_syslog=-1",
-                # "logger_syslog_level=2",
-                # "logger_stdout=-1",
-                # "logger_stdout_level=2",
-
-                # Advanced Settings
-                # "eapol_key_index_workaround=0",
-                # "eap_server=0",
-                # "own_ip_addr=127.0.0.1",
+                f"ap_isolate={int(self.config.get('isolate_clients', False))}",
+                f"ignore_broadcast_ssid={False}",
+                "beacon_int=100\n",
             ]
 
             # Write basic configuration
             print("Write basic configuration")
             with open(os.path.join(self.conf_dir, 'hostapd.conf'), 'w') as f:
-                f.write('\n'.join(config_lines) + '\n')
-
                 # Add country code if specified
-                print(f"{fg.FCYAN} - Add country code if specified{fg.RESET}")
                 if self.config.get('country'):
                     f.write(f"country_code={self.config['country']}\n")
                     f.write("ieee80211d=1\n")
                     f.write("ieee80211h=1\n")
 
                 # Set hardware mode based on frequency band
-                print(f"{fg.FCYAN} - Set hardware mode based on frequency band{fg.RESET}")
-                print("     ...")
-                if float(self.config.get('freq_band', 2.4)) == 2.4:
+                freq_band = float(self.config.get('freq_band', 2.4))
+                if freq_band == 2.4:
+                    # 2.4GHz configuration
                     f.write("hw_mode=g\n")
-                else:
-                    f.write("hw_mode=a\n")
+                    channel = int(self.config.get('channel', 6))
+                    supported_channels = self.get_supported_channels()['2.4GHz']
 
-                # MAC address filtering
+                    if channel not in supported_channels:
+                        channel_new = supported_channels[0]
+                        print(f"Warning: Channel {channel} is invalid for 2.4GHz band, using default channel {channel_new}")
+                        channel = channel_new
+                    f.write(f"channel={channel}\n")
+                else:
+                    # 5GHz configuration
+                    f.write("hw_mode=a\n")
+                    channel = int(self.config.get('channel', 64))
+
+                    # Get supported channels from hardware
+                    supported_channels = self.get_supported_channels()['5GHz']
+
+                    if not supported_channels:
+                        print("Error: No valid 5GHz channels supported by hardware")
+                        sys.exit(1)
+
+                    if channel not in supported_channels:
+                        print(f"Warning: Channel {channel} not supported, using {supported_channels[0]}")
+                        channel = supported_channels[0]
+
+                    f.write(f"channel={channel}\n")
+
+                # Add the rest of your configuration
+                for line in config_lines:
+                    f.write(f"{line}\n")
+
+                # Add MAC address filtering if configured
                 if self.config.get('mac_filter'):
                     f.write(f"macaddr_acl={int(self.config['mac_filter'])}\n")
                     if self.config.get('mac_filter_accept'):
                         f.write(f"accept_mac_file={self.config['mac_filter_accept']}\n")
 
-                # IEEE 802.11n configuration
-                if self.config.get('ieee80211n', False):
-                    f.write("ieee80211n=1\n")
-                    if self.config.get('ht_capab'):
-                        f.write(f"ht_capab={self.config['ht_capab']}\n")
-
-                # IEEE 802.11ac configuration
-                if self.config.get('ieee80211ac', False):
-                    f.write("ieee80211ac=1\n")
-
-                # IEEE 802.11ax configuration
-                if self.config.get('ieee80211ax', False):
-                    f.write("ieee80211ax=1\n")
-
-                # VHT capabilities
-                if self.config.get('vht_capab'):
-                    f.write(f"vht_capab={self.config['vht_capab']}\n")
-
-                # WMM enabled for n/ac
-                if self.config.get('ieee80211n', False) or self.config.get('ieee80211ac', False):
-                    f.write("wmm_enabled=1\n")
-
-                # WPA/WPA2 configuration
+                # Add WPA/WPA2 configuration if password is set
                 if self.config.get('password'):
-                    # Handle WPA version
-                    wpa_version = self.config.get('wpa_version', '2')
-                    if wpa_version == "1+2":
-                        wpa_version = "2"  # Default to WPA2 for "1+2" setting
+                    self._configure_wpa_settings(f)
 
-                    # Determine key type
-                    wpa_key_type = "passphrase" if not self.config.get('use_psk', False) else "psk"
-
-                    if wpa_version == "3":
-                        # WPA3 Transition Mode configuration
-                        f.write("wpa=2\n")
-                        f.write(f"wpa_{wpa_key_type}={self.config['password']}\n")
-                        f.write("wpa_key_mgmt=WPA-PSK SAE\n")
-                        f.write("wpa_pairwise=CCMP\n")
-                        f.write("rsn_pairwise=CCMP\n")
-                        f.write("ieee80211w=1\n")
-                    else:
-                        # Standard WPA/WPA2 configuration
-                        f.write(f"wpa={wpa_version}\n")
-                        f.write(f"wpa_{wpa_key_type}={self.config['password']}\n")
-                        f.write("wpa_key_mgmt=WPA-PSK\n")
-                        f.write("wpa_pairwise=CCMP\n")
-                        f.write("rsn_pairwise=CCMP\n")
-
-                # Bridge configuration
+                # Add bridge configuration if needed
                 if self.config.get('share_method') == "bridge":
                     f.write(f"bridge={self.config['bridge_iface']}\n")
 
@@ -172,6 +114,100 @@ class NetServices:
 
         except (IOError, KeyError) as e:
             sys.exit(f"Failed to configure hostapd: {str(e)}")
+
+    def _configure_wpa_settings(self, f):
+        """Configure WPA/WPA2/WPA3 settings in the hostapd configuration file"""
+        try:
+            # Handle WPA version
+            wpa_version = self.config.get('wpa_version', '2')
+            if wpa_version == "1+2":
+                wpa_version = "2"  # Default to WPA2 for "1+2" setting
+
+            # Determine key type
+            wpa_key_type = "passphrase" if not self.config.get('use_psk', False) else "psk"
+
+            if wpa_version == "3":
+                # WPA3 Transition Mode configuration
+                f.write(f"wpa_{wpa_key_type}={self.config['password']}\n")
+                f.write("wpa_key_mgmt=WPA-PSK SAE\n")
+                f.write("wpa_pairwise=CCMP\n")
+                f.write("rsn_pairwise=CCMP\n")
+                f.write("ieee80211w=1\n")  # Enable management frame protection
+            else:
+                # Standard WPA/WPA2 configuration
+                f.write(f"wpa={wpa_version}\n")
+                f.write(f"wpa_{wpa_key_type}={self.config['password']}\n")
+                f.write("wpa_key_mgmt=WPA-PSK\n")
+                f.write("wpa_pairwise=CCMP\n")
+                f.write("rsn_pairwise=CCMP\n")
+
+                # Add WPA3 compatibility if requested
+                if wpa_version == "2" and self.config.get('wpa3_compatible', False):
+                    f.write("wpa_key_mgmt=WPA-PSK SAE\n")
+                    f.write("ieee80211w=1\n")
+
+            # Add additional WPA settings if configured
+            if self.config.get('wpa_group_rekey'):
+                f.write(f"wpa_group_rekey={self.config['wpa_group_rekey']}\n")
+
+            if self.config.get('wpa_ptk_rekey'):
+                f.write(f"wpa_ptk_rekey={self.config['wpa_ptk_rekey']}\n")
+
+            if self.config.get('wpa_gmk_rekey'):
+                f.write(f"wpa_gmk_rekey={self.config['wpa_gmk_rekey']}\n")
+
+        except KeyError as e:
+            print(f"Missing WPA configuration parameter: {str(e)}")
+            raise
+        except Exception as e:
+            print(f"Error configuring WPA settings: {str(e)}")
+            raise
+
+    def get_supported_channels(self):
+        """Get list of supported channels from hardware using regex parsing"""
+        try:
+            # Run iw list command and capture output
+            result = subprocess.run(['iw', 'list'],
+                                    capture_output=True, text=True, check=True)
+
+            # Regex pattern to match frequency and channel information
+            pattern = r'\s*\*\s*(\d+\.\d+)\s+MHz\s*\[(\d+)\]'
+
+            supported_channels = {
+                '2.4GHz': set(),
+                '5GHz': set()
+            }
+
+            # Find all matches in the output
+            matches = re.findall(pattern, result.stdout)
+
+            for match in matches:
+                freq = float(match[0])
+                channel = int(match[1])
+
+                # Determine band and validate channel
+                if 2400 <= freq <= 2500:  # 2.4GHz band
+                    if 1 <= channel <= 14:
+                        supported_channels['2.4GHz'].add(channel)
+                elif 5000 <= freq <= 6000:  # 5GHz band
+                    if channel in [36, 40, 44, 48, 52, 56, 60, 64,
+                                   100, 104, 108, 112, 116, 120, 124,
+                                   128, 132, 136, 140, 149, 153, 157,
+                                   161, 165]:
+                        supported_channels['5GHz'].add(channel)
+
+            # Return both bands' channels
+            return {
+                '2.4GHz': sorted(supported_channels['2.4GHz']),
+                '5GHz': sorted(supported_channels['5GHz'])
+            }
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error getting supported channels: {e}")
+            return {'2.4GHz': [], '5GHz': []}
+        except Exception as e:
+            print(f"Error parsing supported channels: {e}")
+            return {'2.4GHz': [], '5GHz': []}
 
     def configure_dnsmasq(self):
         """Configure dnsmasq for DHCP and DNS services."""

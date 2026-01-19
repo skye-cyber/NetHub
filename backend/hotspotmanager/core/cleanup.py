@@ -5,6 +5,7 @@ import subprocess
 import shutil
 from typing import Optional
 from .signals import SignalHandler
+from ap_utils.colors import fg
 
 
 class CleanupManager(SignalHandler):
@@ -103,23 +104,26 @@ class CleanupManager(SignalHandler):
 
     def clean_nat(self):
         # Remove NAT rules
-        subprocess.run([
-            'iptables', '-w', '-t', 'nat', '-D', 'POSTROUTING',
-            '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
-            '!', '-o', self.wifi_iface, '-j', 'MASQUERADE'
-        ], check=False)
-        subprocess.run([
-            'iptables', '-w', '-D', 'FORWARD',
-            '-i', self.wifi_iface,
-            '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
-            '-j', 'ACCEPT'
-        ], check=False)
-        subprocess.run([
-            'iptables', '-w', '-D', 'FORWARD',
-            '-i', self.internet_iface,
-            '-d', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
-            '-j', 'ACCEPT'
-        ], check=False)
+        try:
+            subprocess.run([
+                'iptables', '-w', '-t', 'nat', '-D', 'POSTROUTING',
+                '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
+                '!', '-o', self.wifi_iface, '-j', 'MASQUERADE'
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([
+                'iptables', '-w', '-D', 'FORWARD',
+                '-i', self.wifi_iface,
+                '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
+                '-j', 'ACCEPT'
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([
+                'iptables', '-w', '-D', 'FORWARD',
+                '-i', self.internet_iface,
+                '-d', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
+                '-j', 'ACCEPT'
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except Exception:
+            pass
 
     def clean_bridge(self):
         # Remove bridge configuration if not already a bridge interface
@@ -169,43 +173,49 @@ class CleanupManager(SignalHandler):
         if self.share_method == 'bridge' and self.no_dns:
             return
 
-        subprocess.run([
-            'iptables', '-w', '-D', 'INPUT',
-            '-p', 'tcp', '-m', 'tcp', '--dport', str(self.dns_port), '-j', 'ACCEPT'
-        ], check=False)
+        try:
+            subprocess.run([
+                'iptables', '-w', '-D', 'INPUT',
+                '-p', 'tcp', '-m', 'tcp', '--dport', str(self.dns_port), '-j', 'ACCEPT'
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        subprocess.run([
-            'iptables', '-w', '-D', 'INPUT',
-            '-p', 'udp', '-m', 'udp', '--dport', str(self.dns_port), '-j', 'ACCEPT'
-        ], check=False)
+            subprocess.run([
+                'iptables', '-w', '-D', 'INPUT',
+                '-p', 'udp', '-m', 'udp', '--dport', str(self.dns_port), '-j', 'ACCEPT'
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        subprocess.run([
-            'iptables', '-w', '-t', 'nat', '-D', 'PREROUTING',
-            '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
-            '-d', self.gateway,
-            '-p', 'tcp', '-m', 'tcp', '--dport', '53',
-            '-j', 'REDIRECT', '--to-ports', str(self.dns_port)
-        ], check=False)
+            subprocess.run([
+                'iptables', '-w', '-t', 'nat', '-D', 'PREROUTING',
+                '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
+                '-d', self.gateway,
+                '-p', 'tcp', '-m', 'tcp', '--dport', '53',
+                '-j', 'REDIRECT', '--to-ports', str(self.dns_port)
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        subprocess.run([
-            'iptables', '-w', '-t', 'nat', '-D', 'PREROUTING',
-            '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
-            '-d', self.gateway,
-            '-p', 'udp', '-m', 'udp', '--dport', '53',
-            '-j', 'REDIRECT', '--to-ports', str(self.dns_port)
-        ], check=False)
+            subprocess.run([
+                'iptables', '-w', '-t', 'nat', '-D', 'PREROUTING',
+                '-s', f"{self.gateway.rsplit('.', 1)[0]}.0/24",
+                '-d', self.gateway,
+                '-p', 'udp', '-m', 'udp', '--dport', '53',
+                '-j', 'REDIRECT', '--to-ports', str(self.dns_port)
+            ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except Exception:
+            pass
 
     def clean_dhcp(self):
         # Cleanup DHCP server
         if self.share_method != 'bridge':
-            subprocess.run([
-                'iptables', '-w', '-D', 'INPUT',
-                '-p', 'udp', '-m', 'udp', '--dport', '67', '-j', 'ACCEPT'
-            ], check=False)
+            try:
+                subprocess.run([
+                    'iptables', '-w', '-D', 'INPUT',
+                    '-p', 'udp', '-m', 'udp', '--dport', '67', '-j', 'ACCEPT'
+                ], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception:
+                pass
 
     def clean_interfaces(self):
         # Cleanup virtual interface if not disabled
-        if not self.no_virt and self.vwifi_iface:
+        if not self.no_virt and self.vwifi_iface and self.ap_man.interface_manager.interface_exists(self.vwifi_iface):
             subprocess.run(['ip', 'link', 'set', 'down', 'dev', self.vwifi_iface], check=False)
             subprocess.run(['ip', 'addr', 'flush', self.vwifi_iface], check=False)
             self.networkmanager_rm_unmanaged_if_needed(self.vwifi_iface, self.old_macaddr)
@@ -215,14 +225,14 @@ class CleanupManager(SignalHandler):
             # Cleanup main interface
             subprocess.run(['ip', 'link', 'set', 'down', 'dev', self.wifi_iface], check=False)
             subprocess.run(['ip', 'addr', 'flush', self.wifi_iface], check=False)
-            if self.new_macaddr:
+            if self.new_macaddr and self.old_macaddr:
                 subprocess.run(['ip', 'link', 'set', 'dev', self.wifi_iface, 'address', self.old_macaddr], check=False)
             self.networkmanager_rm_unmanaged_if_needed(self.wifi_iface, self.old_macaddr)
 
     def restore_forwarding_config(self):
         # Check if we're the last instance using this internet interface
         found = False
-        for conf_dir in self.list_running_conf():
+        for conf_dir in self.ap_man.network_config.list_running_conf():
             nat_internet_iface_path = os.path.join(conf_dir, 'nat_internet_iface')
             if os.path.exists(nat_internet_iface_path):
                 with open(nat_internet_iface_path, 'r') as f:
@@ -233,6 +243,9 @@ class CleanupManager(SignalHandler):
         if not found and self.internet_iface:
             # Restore original forwarding setting
             forwarding_file = os.path.join(self.conf_dir, f"{self.internet_iface}_forwarding")
+            if not os.path.exists(forwarding_file):
+                return
+
             # if os.path.exists(forwarding_file):
             with open(forwarding_file, 'r') as src, open(f"/proc/sys/net/ipv4/conf/{self.internet_iface}/forwarding", 'w') as dst:
                 shutil.copyfileobj(src, dst)
@@ -277,9 +290,14 @@ class CleanupManager(SignalHandler):
 
             # Clean interfaces
             self.clean_interfaces()
+
+            # Perfrom basic leanup
+            self._basic_cleanup()
+        except Exception as e:
+            print(f"{fg.RED}{e}{fg.RESET}")
         finally:
             self.lock.mutex_unlock()
-            self.cleanup_lock()
+            self.lock.cleanup_lock()
 
             # Remove daemon PID file if running as daemon
             if self.running_as_daemon and self.daemon_pidfile and os.path.exists(self.daemon_pidfile):
@@ -306,6 +324,7 @@ class CleanupManager(SignalHandler):
 
     def _basic_cleanup(self):
         """Basic cleanup that should always work."""
+        print("Start Basic cleanup ...")
         try:
             # Kill any remaining processes
             if os.path.exists(self.proc_dir):
@@ -313,14 +332,10 @@ class CleanupManager(SignalHandler):
                     if pid_file.endswith('.pid'):
                         pid_path = os.path.join(self.proc_dir, pid_file)
                         try:
-                            with open(pid_path, 'r') as f:
-                                pid = int(f.read().strip())
-                            os.kill(pid, signal.SIGKILL)
-                            os.remove(pid_path)
+                            self.rm_proc(pid_path)
                         except (IOError, ValueError, OSError, ProcessLookupError):
                             pass
 
-            # Remove PID files
             try:
                 if os.path.exists(self.COUNTER_LOCK_FILE):
                     os.remove(self.COUNTER_LOCK_FILE)
@@ -331,6 +346,24 @@ class CleanupManager(SignalHandler):
         except Exception:
             pass
 
+    def rm_proc(self, pid_path):
+        # Clean proccess with its files
+        with open(pid_path, 'r') as f:
+            pid = int(f.read().strip())
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+        finally:
+            os.remove(pid_path)
+
+        conf_dir = pid_path.strip('.pid')
+        if os.path.exists(conf_dir):
+            try:
+                shutil.rmtree(conf_dir)
+            except Exception:
+                pass
+
     def _clean_exit_(self):
         """Handle clean exits."""
         # Send clean_exit signal to the main process if not the main process
@@ -340,7 +373,7 @@ class CleanupManager(SignalHandler):
 
     def has_running_instance(self) -> bool:
         """Check if there are any running instances."""
-        return len(self.list_running_conf()) > 0
+        return len(self.ap_man.network_config.list_running_conf()) > 0
 
     def networkmanager_rm_unmanaged_if_needed(self, iface: str, mac: Optional[str] = None) -> bool:
         """Remove an interface from unmanaged list if needed."""
@@ -356,28 +389,6 @@ class CleanupManager(SignalHandler):
                 os.remove(iface_conf)
         except OSError:
             pass
-
-    def list_running_conf(self) -> list:
-        """List all running configuration directories."""
-        running_confs = []
-        try:
-            if os.path.exists(self.conf_dir):
-                for item in os.listdir(self.conf_dir):
-                    # Skip non-ap_manager files
-                    if not item.startswith('ap_manager'):
-                        continue
-
-                    # Check if this is a valid running configuration
-                    pid_file = os.path.join(self.proc_dir, item + '.pid') if item else None
-                    wifi_iface_file = os.path.join(self.conf_dir, item, 'wifi_iface') if item else None
-
-                    if pid_file and wifi_iface_file:
-                        if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
-                            running_confs.append(os.path.join(self.conf_dir, item))
-        except OSError:
-            pass
-
-        return running_confs
 
     def _is_bridge_interface_(self, iface: str) -> bool:
         """Check if an interface is a bridge interface."""

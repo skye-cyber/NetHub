@@ -465,19 +465,55 @@ class NetworkConfigurator:
         running_confs = []
         try:
             if os.path.exists(self.conf_dir):
-                for item in os.listdir(self.conf_dir):
+                for item in os.listdir(self.proc_dir):
                     # Skip non-ap_manager files
                     if not item.startswith('ap_manager'):
                         continue
 
                     # Check if this is a valid running configuration
-                    pid_file = os.path.join(self.proc_dir, item + '.pid') if item else None
-                    wifi_iface_file = os.path.join(self.conf_dir, item, 'wifi_iface') if item else None
+                    pid_file = item.endswith('.pid')  # os.path.join(self.proc_dir, item + '.pid') if item else None
+                    # wifi_iface_file = os.path.join(self.conf_dir, item, 'wifi_iface') if item else None
 
-                    if pid_file and wifi_iface_file:
-                        if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
-                            running_confs.append(os.path.join(self.conf_dir, item))
+                    if pid_file:  # and wifi_iface_file:
+                        # if os.path.exists(pid_file) and os.path.exists(wifi_iface_file):
+                        running_confs.append(os.path.join(item))
         except OSError:
             pass
 
         return running_confs
+
+    def get_running_instances(self) -> list:
+        """List all running configuration directories"""
+        running_instances = []
+
+        try:
+            if os.path.exists(self.proc_dir):
+                for item in os.listdir(self.proc_dir):
+                    # Skip non-ap_manager files
+                    if not any((item.startswith('ap_manager'), item.endswith('.pid'))):
+                        continue
+
+                    ipath = os.path.join(self.proc_dir, item)
+
+                    if not os.path.isfile(ipath):
+                        continue
+
+                    pid = None
+                    with open(ipath, 'r') as fr:
+                        pid = fr.read()
+
+                    conf = os.path.join(ipath.strip('.pid'), 'vwifi_iface')
+
+                    iface = None
+                    if os.path.exists(conf):
+                        with open(conf, 'r') as f:
+                            iface = f.read()
+
+                    if not pid or not iface:
+                        continue
+
+                    running_instances.append({"pid": pid, 'viface': iface})
+        except OSError:
+            pass
+
+        return running_instances

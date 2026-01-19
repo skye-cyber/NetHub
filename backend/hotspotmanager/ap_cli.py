@@ -277,7 +277,12 @@ def validate_arguments(args):
         elif args.action == 'stop':
             return manager.stop_hotspot()
         elif args.action == 'status':
-            return manager.show_status()
+            manager.show_status()
+            running = manager.network_config.get_running_instances()
+            print(f"\n{fg.BWHITE}{fg.LWHITE}RUNNING INSTANCES{fg.RESET}")
+            print("PID\t\tInterface")
+            for instance in running:
+                print(f"{fg.CYAN}{instance['pid']}\t\t{fg.BBLUE}{instance['viface']}{fg.RESET}")
         elif args.action == 'configure':
             return manager.configure(args.ssid, args.password, args.interface, args.mode)
         elif args.action == 'interfaces':

@@ -18,7 +18,7 @@ class NetworkManager:
 
     def _get_interface_freq_(self, iface=None) -> float:
         iface = iface if iface else self.ap_man.config['wifi_iface']
-        result = subprocess.run(['iw', 'dev', 'wlan0', 'link'], check=True, capture_output=True, text=True)
+        result = subprocess.run(['iw', 'dev', iface, 'link'], check=True, capture_output=True, text=True)
         lines = result.stdout.split('\n')
         freq_line = [line for line in lines if 'freq' in line][0].strip()
         freq = float(freq_line.split(':', 1)[-1].strip())
@@ -139,7 +139,7 @@ class NetworkManager:
 
     def networkmanager_add_unmanaged(self, iface: str, mac: Optional[str] = None) -> bool:
         """Add an interface to NetworkManager's unmanaged devices list."""
-        global ADDED_UNMANAGED
+        # global self.ADDED_UNMANAGED
 
         if not self.networkmanager_exists():
             return False
@@ -235,7 +235,7 @@ class NetworkManager:
 
     def networkmanager_rm_unmanaged(self, iface: str, mac: Optional[str] = None) -> bool:
         """Remove an interface from NetworkManager's unmanaged devices list."""
-        global ADDED_UNMANAGED
+        # global self.ADDED_UNMANAGED
 
         if not self.networkmanager_exists() or not os.path.exists(self.NETWORKMANAGER_CONF):
             return False
@@ -296,8 +296,8 @@ class NetworkManager:
                         f.write(line)
 
             # Remove from tracking set
-            if iface in ADDED_UNMANAGED:
-                ADDED_UNMANAGED.remove(iface)
+            if iface in self.ADDED_UNMANAGED:
+                self.ADDED_UNMANAGED.remove(iface)
 
             # Send SIGHUP to NetworkManager
             try:
@@ -309,6 +309,8 @@ class NetworkManager:
                 pass
 
             return True
+        except Exception:
+            pass # print(e)
         finally:
             self.mutex_unlock()
 
@@ -340,7 +342,7 @@ class NetworkManager:
 
     def networkmanager_rm_unmanaged_if_needed(self, iface: str, mac: Optional[str] = None) -> bool:
         """Remove an interface from unmanaged list if it was added by this script."""
-        if iface in ADDED_UNMANAGED:
+        if iface in self.ADDED_UNMANAGED:
             return self.networkmanager_rm_unmanaged(iface, mac)
         return False
 

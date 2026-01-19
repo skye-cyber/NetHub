@@ -191,7 +191,7 @@ class InterfaceManager:
                 print("Creating a virtual WiFi interface... ", end='')
                 # Actually create the virtual interface using iw command
                 command.run(
-                    ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
+                    ['iw', 'dev', self.config['internet_iface'], 'interface', 'add',
                         self.config['vwifi_iface'], 'type', '__ap'],
                     check=True, capture_output=True, text=True, force_return=True
                 )
@@ -243,7 +243,8 @@ class InterfaceManager:
 
     def initialize_wifi_interface(self):
         """Initialize the WiFi interface with proper configuration"""
-        print("Initialize wifi", self.config['vwifi_iface'], self.config['wifi_iface'])
+        print(f"Initialize wifi: {fg.YELLOW}{self.config['vwifi_iface']}{fg.RESET} on {fg.BWHITE}{self.config['internet_iface']}{fg.RESET}")
+
         try:
             # Set MAC address if virtualization is enabled and MAC is specified
             if not self.config.get('no_virt', False) and self.config.get('mac'):
@@ -273,15 +274,14 @@ class InterfaceManager:
             print('Configure interface for non-bridge sharing method')
             if self.config.get('share_method', 'none') != 'bridge':
                 # Bring interface up
-                print(" - Bring interface up\n")
+                # print(" - Bring interface up\n")
 
                 def bring_interface_up():
                     return command.run([
                         'ip', 'link', 'set', 'up', 'dev', self.config['vwifi_iface']
                     ], check=True, force_return=True)
-                    print("Done", self.config['vwifi_iface'])
 
-                result = bring_interface_up()
+                result = True  # bring_interface_up()
                 if not result or isinstance(result, dict) and result['status'] == 'error':
                     command.run(['sudo', 'rfkill', 'unblock', 'all'], check=True)
                     bring_interface_up()
