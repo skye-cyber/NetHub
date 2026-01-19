@@ -6,6 +6,7 @@ Handles all interface-related operations including creation, configuration, and 
 import os
 import re
 import subprocess
+import time
 import uuid
 from ap_utils.colors import fg
 from ap_utils.command import command
@@ -115,7 +116,18 @@ class InterfaceManager:
             # Create virtual interface
             self.create_virtual_interface()
 
+            # unblock rfkill first
+            self.netmanager.rfkill_off(iface="all")
+
+            # Wifi off first
+            self.netmanager.wifi_switch(state="off")
+            time.sleep(2)
+
+            # Start services [hostapd, dnsmasq, dns, internet sharing]
             netservice.start()
+
+            # Wifi on
+            self.netmanager.wifi_switch(state='on')
 
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
@@ -228,16 +240,18 @@ class InterfaceManager:
 
     def make_interface_unmanaged(self):
         """Make the WiFi interface unmanaged by NetworkManager"""
-        if (self.netmanager.networkmanager_exists()
-                and not self.netmanager.networkmanager_iface_is_unmanaged(self.config['vwifi_iface'])):
-            print(f"Network Manager found, set {self.config['vwifi_iface']} as unmanaged device... ")
-            unmanaged = self.netmanager.networkmanager_add_unmanaged(self.config['vwifi_iface'])
-            print(f"{fg.BYELLOW}{self.config['vwifi_iface']}{fg.RESET} State: {fg.GREEN}{'unmanaged' if unmanaged else 'managed'}{fg.RESET}")
+        if self.netmanager.networkmanager_exists():
+            if not self.netmanager.networkmanager_iface_is_unmanaged(self.config['vwifi_iface']):
+                print(f"Network Manager found, set {self.config['vwifi_iface']} as unmanaged device... ")
+                unmanaged = self.netmanager.networkmanager_add_unmanaged(self.config['vwifi_iface'])
+                print(f"{fg.BYELLOW}{self.config['vwifi_iface']}{fg.RESET} State: {fg.GREEN}{'unmanaged' if unmanaged else 'managed'}{fg.RESET}")
 
-            if self.netmanager.networkmanager_is_running():
-                if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
-                    self.clean.die("Failed to wait for interface to be unmanaged")
-                print(" - DONE")
+                if self.netmanager.networkmanager_is_running():
+                    if not self.netmanager.networkmanager_wait_until_unmanaged(self.config['vwifi_iface']):
+                        self.clean.die("Failed to wait for interface to be unmanaged")
+                    print(" - DONE")
+            else:
+                print(f"Interface {self.config['vwifi_iface']} is already UNMANAGED. Skip...")
         else:
             print("NetworkMnager not found")
 
@@ -425,15 +439,18 @@ class InterfaceManager:
         """Deallocate a new interface name"""
         prefix = iface if iface else self.config['vwifi_iface']
         # if interface is say wlan0 use wlan as the prefix
-        if prefix.split('')[-1].isnumeric():
-            prefix = prefix.rsplit('', 1)[0]
+        if prefix[-1].isnumeric():
+            prefix = prefix[:-1]
 
-        i = 0
         self.lock.mutex_lock()
+
         try:
-            while True:
+            for i in range(5):
                 iface_name = f"{prefix}{i}"
-                if not self.is_interface(iface_name) and not os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}"):
+                if all((
+                    self.is_interface(iface_name),
+                    os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}")
+                )):
                     os.remove(f"{self.conf_dir}/ifaces/{iface_name}")
                     self.lock.mutex_unlock()
                     return iface_name

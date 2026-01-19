@@ -218,8 +218,11 @@ class CleanupManager(SignalHandler):
         if not self.no_virt and self.vwifi_iface and self.ap_man.interface_manager.interface_exists(self.vwifi_iface):
             subprocess.run(['ip', 'link', 'set', 'down', 'dev', self.vwifi_iface], check=False)
             subprocess.run(['ip', 'addr', 'flush', self.vwifi_iface], check=False)
+
             self.networkmanager_rm_unmanaged_if_needed(self.vwifi_iface, self.old_macaddr)
+
             subprocess.run(['iw', 'dev', self.vwifi_iface, 'del'], check=False)
+
             self.ap_man.dalloc_iface(self.vwifi_iface)
         else:
             # Cleanup main interface
@@ -287,9 +290,11 @@ class CleanupManager(SignalHandler):
             self.clean_dns()
 
             self.clean_dhcp()
-
-            # Clean interfaces
-            self.clean_interfaces()
+            try:
+                # Clean interfaces
+                self.clean_interfaces()
+            except Exception as e:
+                print(f"{fg.RED}{e}{fg.RESET}")
 
             # Perfrom basic leanup
             self._basic_cleanup()

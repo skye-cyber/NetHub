@@ -19,7 +19,7 @@ class NetServices:
         self.config = config_manager.get_config
 
     def configure(self):
-        print("Configuring")
+        print("Configuring services ...")
         self.configure_hostapd()
 
         # Configure dnsmasq if not using bridge and not disabled
@@ -308,23 +308,20 @@ class NetServices:
             self.hostapd_pid = self.hostapd_process.pid
             with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
                 f.write(str(self.hostapd_pid))
-
                 print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
 
             # Wait for the process to complete
             return_code = self.hostapd_process.wait()
 
             if return_code != 0:
-                # Print error message if hostapd failed
-                # error_msg = self.hostapd_process.stderr.read() if self.hostapd_process.stderr else ""
-                print(f"Error: {fg.RED}{self.hostapd_process.stderr.read() or self.hostapd_process.stdout.read()}{fg.RESET}")
+                print(f"Error: {fg.FRED}{self.hostapd_process.stderr.read() or self.hostapd_process.stdout.read()}{fg.RESET}")
 
                 # NetworkManager specific suggestions
                 if netmanager.networkmanager_is_running():
                     print("If an error like 'n80211: Could not configure driver mode' was thrown, "
                           "try running the following before starting ap_manager:")
 
-                    if self.nm_older_version:
+                    if netmanager.NM_OLDER_VERSION:
                         print("    nmcli nm wifi off")
                     else:
                         print("    nmcli r wifi off")
@@ -338,6 +335,7 @@ class NetServices:
             raise f"Error starting hostapd: {str(e)}"
 
     def dhcp_service_nodns(self):
+        return
         # Configure DNS if not disabled
         dns_port = self.config.get('dns_port', 5353)
 

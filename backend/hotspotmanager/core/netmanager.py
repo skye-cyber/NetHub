@@ -61,8 +61,6 @@ class NetworkManager:
             bool: True if NetworkManager is installed, False otherwise
             Also sets NM_OLDER_VERSION global if version is checked successfully
         """
-        global NM_OLDER_VERSION
-
         try:
             # Check if nmcli exists
             subprocess.run(['which', 'nmcli'],
@@ -80,7 +78,7 @@ class NetworkManager:
             # Extract version number
             nm_ver = re.search(r'[0-9]+(\.[0-9]+)*\.[0-9]+', result.stdout)
             if nm_ver:
-                NM_OLDER_VERSION = self.version_cmp(nm_ver.group(0), "0.9.9") == 2
+                self.NM_OLDER_VERSION = self.version_cmp(nm_ver.group(0), "0.9.9") == 1
                 return True
 
         except (subprocess.CalledProcessError, AttributeError):
@@ -94,13 +92,12 @@ class NetworkManager:
             return False
 
         try:
-            if NM_OLDER_VERSION:
+            if self.NM_OLDER_VERSION:
                 result = subprocess.run(['nmcli', '-t', '-f', 'RUNNING', 'nm'],
                                         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             else:
                 result = subprocess.run(['nmcli', '-t', '-f', 'RUNNING', 'g'],
                                         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
             return 'running' in result.stdout
         except subprocess.CalledProcessError:
             return False
@@ -153,7 +150,7 @@ class NetworkManager:
                 pass
 
         # Get MAC address if not provided
-        if NM_OLDER_VERSION and mac is None:
+        if self.NM_OLDER_VERSION and mac is None:
             mac = self.ap_man.get_macaddr(iface)
             if not mac:
                 return False
@@ -172,12 +169,12 @@ class NetworkManager:
 
             # Check if already exists
             if unmanaged:
-                target = f"mac:{mac}" if NM_OLDER_VERSION else f"interface-name:{iface}"
+                target = f"mac:{mac}" if self.NM_OLDER_VERSION else f"interface-name:{iface}"
                 if target in unmanaged:
                     return True
 
             # Add new entry
-            if NM_OLDER_VERSION:
+            if self.NM_OLDER_VERSION:
                 new_entry = f"mac:{mac}"
             else:
                 new_entry = f"interface-name:{iface}"
@@ -235,13 +232,12 @@ class NetworkManager:
 
     def networkmanager_rm_unmanaged(self, iface: str, mac: Optional[str] = None) -> bool:
         """Remove an interface from NetworkManager's unmanaged devices list."""
-        # global self.ADDED_UNMANAGED
 
         if not self.networkmanager_exists() or not os.path.exists(self.NETWORKMANAGER_CONF):
             return False
 
         # Get MAC address if not provided
-        if NM_OLDER_VERSION and mac is None:
+        if self.NM_OLDER_VERSION and mac is None:
             mac = self.get_macaddr(iface)
             if not mac:
                 return False
@@ -263,7 +259,7 @@ class NetworkManager:
             unmanaged = unmanaged.replace('unmanaged-devices=', '').replace(';', ' ').replace(',', ' ').split()
 
             # Remove the interface
-            if NM_OLDER_VERSION:
+            if self.NM_OLDER_VERSION:
                 target = f"mac:{mac}"
             else:
                 target = f"interface-name:{iface}"
@@ -310,7 +306,7 @@ class NetworkManager:
 
             return True
         except Exception:
-            pass # print(e)
+            pass
         finally:
             self.mutex_unlock()
 
@@ -365,8 +361,17 @@ class NetworkManager:
 
         return False
 
-    def rfkill_off(self):
-        return subprocess.run(['sudo', 'rfkill', 'unblock', 'phy0'], check=True)
+    def rfkill_off(self, iface='wlan'):
+        try:
+            return subprocess.run(['sudo', 'rfkill', 'unblock', 'wlan'], check=True)
+        except Exception:
+            return False
+
+    def wifi_switch(self, state="off"):
+        try:
+            return subprocess.run(['sudo', 'nmcli', 'r', 'wifi', state], check=True)
+        except Exception:
+            return False
 
 
 netmanager = NetworkManager(ap_man=None)
