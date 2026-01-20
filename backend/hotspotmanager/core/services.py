@@ -33,8 +33,9 @@ class NetServices:
             self.configure_dnsmasq()
 
     def start(self):
-        self.enable_internet_sharing()
-        self.start_dhcp_dns()
+        ...
+        # self.enable_internet_sharing()
+        # self.start_dhcp_dns()
 
     def get_dhcp_range(self) -> str:
         """Get DHCP range configuration"""
