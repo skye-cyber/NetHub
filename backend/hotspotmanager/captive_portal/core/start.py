@@ -1,21 +1,22 @@
 import subprocess
-from typing import List
 from pathlib import Path
 
 from .setup import captivesetup
 from .firewall import firewall
+from .config import BaseConfig
 
 
 class StartCaptive:
-    def __init__(self):
-        self.interface = "xap0"
+    def __init__(self, config: BaseConfig = BaseConfig()):
+        self.config = config if config else BaseConfig()
+        self.interface = self.config.CLIENT_INTERFACE
         self.log_file = Path('/etc/ap_manager/captive.log')
-        self.dnsmasq_logfile = Path('/etc/ap_manager/dnsmasq.log')
-        self.dnsmasq_config = Path("/etc/dnsmasq.d/ap_manager_portal.conf")
-        self.gateway_address = '192.168.100.1'
-        self.broadcast = f"{'.'.join(self.gateway_address.split('.')[:-1])}.255"
-        self.dhcp_range = "192.168.100.10,192.168.100.100,255.255.255.0,12h"
-        self.dnsmasq_leasefile = Path('/var/lib/misc/dnsmasq.leases')
+        self.dnsmasq_logfile = self.config.dnsmasq_logfile
+        self.dnsmasq_config = self.config.dnsmasq_config
+        self.gateway_address = self.config.GATEWAY_ADDRESS
+        self.broadcast = self.config.get_broadcast_address()
+        self.dhcp_range = self.config.get_dhcp_range()
+        self.dnsmasq_leasefile = self.config.dnsmasq_leasefile
 
     def start(self) -> bool:
         """Start the captive portal service"""
@@ -105,4 +106,5 @@ class StartCaptive:
         return True
 
 
+# Initialize startcaptive instance with shared config
 startcaptive = StartCaptive()

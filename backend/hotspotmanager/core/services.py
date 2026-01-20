@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import time
 import subprocess
 from ap_utils.colors import fg
 from ap_utils.command import command
@@ -12,8 +13,11 @@ from .shared import shared
 class NetServices:
     def __init__(self):
         self.config = config_manager.get_config
+        self.base_dir = self.config['base_dir']
         self.proc_dir = self.config['proc_dir']
         self.conf_dir = self.config.get('conf_dir', config_manager.__bconfdir__)
+        self.subnet = self.config['ip_range']
+        self.dhcp_range = self.get_dhcp_range()
 
     def __enter__(self):
         self.config = config_manager.get_config
@@ -30,7 +34,15 @@ class NetServices:
         self.enable_internet_sharing()
         self.start_dhcp_dns()
         # self.start_ap()
-        self.start_hostapd()
+        proc = self.start_hostapd()
+        if self.hostapd_process:
+            return self.hostapd_process
+
+        return proc or False
+
+    def get_dhcp_range(self) -> str:
+        """Get DHCP range configuration"""
+        return f"{self.subnet.split('/')[0].rsplit('.', 1)[0]}.10,{self.subnet.split('/')[0].rsplit('.', 1)[0]}.100,255.255.255.0,12h"
 
     def configure_hostapd(self):
         """Configure hostapd with all necessary parameters."""
@@ -45,7 +57,7 @@ class NetServices:
                 f"ctrl_interface={os.path.join(self.conf_dir, 'hostapd_ctrl')}",
                 "ctrl_interface_group=0",
                 "max_num_sta=25",
-                "ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]",
+                f"ht_capab={self.config['ht_capab']}",  # [HT40][SHORT-GI-20][DSSS_CCK-40]",
                 "auth_algs=1",
                 f"ap_isolate={int(self.config.get('isolate_clients', False))}",
                 f"ignore_broadcast_ssid={False}",
@@ -232,11 +244,15 @@ class NetServices:
 
             # Write dnsmasq configuration
             with open(os.path.join(self.conf_dir, 'dnsmasq.conf'), 'w') as f:
+                f.write(f"interface={self.config['vwifi_iface']}\n")
                 f.write(f"listen-address={self.config['gateway']}\n")
                 f.write(f"{dnsmasq_bind}\n")
-                f.write(f"dhcp-range={self.config['gateway'][:-1]}1,{self.config['gateway'][:-1]}254,255.255.255.0,24h\n")
-                f.write(f"dhcp-option-force=option:router,{self.config['gateway']}\n")
-                f.write(f"dhcp-option-force=option:dns-server,{dhcp_dns}\n")
+                f.write(f"dhcp-range={self.dhcp_range}\n")
+                # f.write(f"dhcp-option-force=option:router,{self.config['gateway']}\n")
+                f.write(f"dhcp-option=3,{self.config.get('gateway', "192.168.100.1")}\n")
+                f.write("dhcp-option=6,8.8.8.8,8.8.4.4\n")  # Google for fallback
+                f.write("server=8.8.8.8\n")
+                f.write("server=8.8.4.4\n")
 
                 # Add MTU option if available
                 mtu = shared.get_mtu(self.config['internet_iface'])
@@ -270,9 +286,87 @@ class NetServices:
 
             sys.exit(f"Failed to configure dnsmasq: {str(e)}")
 
+    def __start_hostapd(self):
+        """Start hostapd with proper error handling and output buffering."""
+        # Check if stdbuf is available for unbuffered output
+        stdbuf_path = None
+        try:
+            result = subprocess.run(['which', 'stdbuf'],
+                                    capture_output=True, text=True,
+                                    check=True)
+            stdbuf_path = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            pass
+
+        # Build the hostapd command
+        hostapd_cmd = []
+        if stdbuf_path:
+            hostapd_cmd.extend([stdbuf_path, '-oL'])
+
+        hostapd_cmd.extend([
+            self.config['hostapd_path'],
+            *self.config.get('hostapd_debug_args', []),
+            os.path.join(self.conf_dir, 'hostapd.conf')
+        ])
+
+        # Start hostapd in the background
+        try:
+            # Use Popen to start hostapd in the background
+            self.hostapd_process = subprocess.Popen(
+                hostapd_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            # Save the PID
+            self.hostapd_pid = self.hostapd_process.pid
+            with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
+                f.write(str(self.hostapd_pid))
+            print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
+
+            # Check if hostapd started successfully
+            # Wait briefly to see if there's any immediate error output
+            time.sleep(1)  # Give it a moment to start
+
+            # Check for errors in the output
+            error_output = self.hostapd_process.stderr.read()
+            if error_output:
+                print(f"Error: {fg.RED}{error_output}{fg.RESET}")
+
+                # NetworkManager specific suggestions
+                if netmanager.networkmanager_is_running():
+                    print("If an error like 'n80211: Could not configure driver mode' was thrown, ")
+                    if netmanager.NM_OLDER_VERSION:
+                        print("    nmcli nm wifi off")
+                    else:
+                        print("    nmcli r wifi off")
+
+                    print("    rfkill unblock wlan")
+
+                # Clean up and exit
+                print(f"{fg.RED}Hostapd failed to start{fg.RESET}")
+                return False
+
+            return True
+
+        except Exception as e:
+            raise Exception(f"Error starting hostapd: {str(e)}")
+
     def start_hostapd(self):
         """Start hostapd with proper error handling and output buffering."""
         # Check if stdbuf is available for unbuffered output
+
+        # Check if hostapd is already running
+        if self.is_hostapd_running():
+            print("Hostapd is already running")
+            return True
+
+        # Check if the interface is already configured
+        if shared.is_interface_configured(self.config['vwifi_iface']):
+            print("Interface is already configured, restarting hostapd")
+            if not self.restart_hostapd():
+                return False
 
         stdbuf_path = None
         try:
@@ -296,43 +390,143 @@ class NetServices:
 
         # Start hostapd in the background
         try:
-            # Use Popen instead of run to get the process object
-            self.hostapd_process = subprocess.Popen(
-                hostapd_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            netmanager.rfkill_off()
+            netmanager.kill_hostapd()
+
+            try:
+                # Use Popen instead of run to get the process object
+                self.hostapd_process = subprocess.Popen(
+                    hostapd_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,  # Create a new session
+                    # preexec_fn=os.setsid,    # Set process group
+                    # close_fds=True,           # Close all file descriptors
+                    text=True
+                )
+            except Exception as e:
+                print("ERR:", e)
 
             # Save the PID
             self.hostapd_pid = self.hostapd_process.pid
+
             with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
                 f.write(str(self.hostapd_pid))
                 print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
 
-            # Wait for the process to complete
-            return_code = self.hostapd_process.wait()
-
-            if return_code != 0:
-                print(f"Error: {fg.FRED}{self.hostapd_process.stderr.read() or self.hostapd_process.stdout.read()}{fg.RESET}")
-
-                # NetworkManager specific suggestions
-                if netmanager.networkmanager_is_running():
-                    print("If an error like 'n80211: Could not configure driver mode' was thrown, "
-                          "try running the following before starting ap_manager:")
-
-                    if netmanager.NM_OLDER_VERSION:
-                        print("    nmcli nm wifi off")
-                    else:
-                        print("    nmcli r wifi off")
-
-                    print("    rfkill unblock wlan")
-
-                # Clean up and exit
-                print(f"{fg.RED}Hostapd failed to start{fg.RESET}")
-
+            return self.hostapd_process
         except Exception as e:
-            raise f"Error starting hostapd: {str(e)}"
+            print(f"Error starting hostapd: {str(e)}")
+            return False
+
+    def handle_hostapd_err(self):
+        # Wait for the process to complete
+        return_code = self.hostapd_process.returncode  # self.hostapd_process.wait()
+
+        if return_code != 0:
+            print(f"Error: {fg.FRED}{self.hostapd_process.stderr.read() or self.hostapd_process.stdout.read()}{fg.RESET}")
+
+            # NetworkManager specific suggestions
+            if netmanager.networkmanager_is_running():
+                print("If an error like 'n80211: Could not configure driver mode' was thrown, "
+                    "try running the following before starting ap_manager:")
+
+                if netmanager.NM_OLDER_VERSION:
+                    print("    nmcli nm wifi off")
+                else:
+                    print("    nmcli r wifi off")
+
+                print("    rfkill unblock wlan")
+
+            # Clean up and exit
+            print(f"{fg.RED}Hostapd failed to start{fg.RESET}")
+
+    def stop_hostapd(self) -> bool:
+        """Stop hostapd process if it's running.
+
+        Returns:
+            bool: True if hostapd was stopped successfully, False otherwise
+        """
+        if hasattr(self, 'hostapd_process') and self.hostapd_process:
+            try:
+                # First try to terminate gracefully
+                self.hostapd_process.terminate()
+                try:
+                    self.hostapd_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    # If still running after 5 seconds, kill it
+                    self.hostapd_process.kill()
+
+                # Clean up
+                self.hostapd_process = None
+                self.hostapd_pid = None
+
+                # Remove PID file
+                pid_file = os.path.join(self.proc_dir, 'hostapd.pid')
+                if os.path.exists(pid_file):
+                    os.remove(pid_file)
+
+                print("Hostapd stopped successfully")
+                return True
+            except Exception as e:
+                print(f"Error stopping hostapd: {str(e)}")
+                return False
+        return True
+
+    def restart_hostapd(self) -> bool:
+        """Restart hostapd by stopping and starting it.
+
+        Returns:
+            bool: True if hostapd was restarted successfully, False otherwise
+        """
+        print("Restarting hostapd")
+
+        # First stop hostapd if it's running
+        if self.is_hostapd_running():
+            if not self.stop_hostapd():
+                print("Failed to stop hostapd")
+                return False
+
+        # Small delay before restarting
+        time.sleep(1)
+
+        # Then start hostapd
+        return self.start_hostapd()
+
+    def is_hostapd_running(self) -> bool:
+        """Check if hostapd is running.
+
+        Returns:
+            bool: True if hostapd is running, False otherwise
+        """
+        if hasattr(self, 'hostapd_process') and self.hostapd_process:
+            return self.hostapd_process.poll() is None
+        return False
+
+    def get_hostapd_logs(self) -> tuple:
+        """Get the contents of hostapd log files.
+
+        Returns:
+            tuple: (stdout_log, stderr_log) contents as strings
+        """
+        stdout_log = os.path.join(self.proc_dir, 'hostapd.stdout.log')
+        stderr_log = os.path.join(self.proc_dir, 'hostapd.stderr.log')
+
+        stdout_content = ""
+        stderr_content = ""
+
+        try:
+            if os.path.exists(stdout_log):
+                with open(stdout_log, 'r') as f:
+                    stdout_content = f.read()
+
+            if os.path.exists(stderr_log):
+                with open(stderr_log, 'r') as f:
+                    stderr_content = f.read()
+        except IOError as e:
+            print(f"Error reading hostapd logs: {str(e)}")
+
+        return stdout_content, stderr_content
 
     def dhcp_service_nodns(self):
         return
@@ -421,16 +615,18 @@ class NetServices:
             try:
                 # Start dnsmasq if not running
                 # TODO: kill dnsmasq and continue
-                if not self.get_dnsmasq_pid():
-                    command.run([
-                        'dnsmasq',
-                        '-C', os.path.join(self.conf_dir, 'dnsmasq.conf'),
-                        '-x', os.path.join(self.conf_dir, 'dnsmasq.pid'),
-                        '-l', os.path.join(self.conf_dir, 'dnsmasq.leases'),
-                        '-p', str(self.config.get('dns_port', 5353))
-                    ], check=True)
-            except Exception:
-                pass
+                if shared.is_dnsmasq_running():
+                    shared.kill_dnsmasq()
+
+                result = subprocess.run([
+                    'dnsmasq',
+                    '-C', os.path.join(self.conf_dir, 'dnsmasq.conf'),
+                    '-x', os.path.join(self.conf_dir, 'dnsmasq.pid'),
+                    '-l', os.path.join(self.conf_dir, 'dnsmasq.leases'),
+                    '-p', str(self.config.get('dns_port', 5353))
+                ], check=True)
+            except Exception as e:
+                print(e)
             finally:
                 pid = self.get_dnsmasq_pid()
                 if pid:
@@ -543,8 +739,8 @@ class NetServices:
             and it must know where it's connected, otherwise connection is lost.
             """
 
-            if not self.is_bridge_interface(self.config['internet_iface']):
-                print("Create a bridge interface... ", end='')
+            if not shared.is_bridge_interface(self.config['internet_iface']):
+                print("Create a bridge interface... ")
 
                 # Save current IP addresses and routes
                 ip_output = subprocess.run(
@@ -570,13 +766,17 @@ class NetServices:
                     netmanager.networkmanager_add_unmanaged(self.config['internet_iface'])
                     netmanager.networkmanager_wait_until_unmanaged(self.config['internet_iface'])
 
-                # Create bridge interface
-                print("Create bridge interface")
-                command.run([
-                    'ip', 'link', 'add', 'name', self.config['bridge_iface'],
-                    'type', 'bridge'
-                ], check=True)
+                try:
+                    # Create bridge interface
+                    print("Create bridge interface")
+                    subprocess.run([
+                        'ip', 'link', 'add', 'name', self.config['bridge_iface'],
+                        'type', 'bridge'
+                    ], check=True)
+                except Exception as e:
+                    print(f"E: {fg.RED}{e}{fg.RESET}")
 
+                print('...s')
                 command.run([
                     'ip', 'link', 'set', 'dev', self.config['bridge_iface'], 'up'
                 ], check=True)
@@ -596,10 +796,16 @@ class NetServices:
                     'ip', 'link', 'set', 'dev', self.config['internet_iface'], 'up'
                 ], check=True)
 
-                command.run([
-                    'ip', 'link', 'set', 'dev', self.config['internet_iface'],
-                    'master', self.config['bridge_iface']
-                ], check=True)
+                try:
+                    result = subprocess.run([
+                        'ip', 'link', 'set', 'dev', self.config['internet_iface'],
+                        'master', self.config['bridge_iface']
+                    ], text=True)
+                    if result.returncode != 0:
+                        print(f"{fg.FWHITE}{result.stderr or result.stdout}{fg.RESET}")
+                except Exception as e:
+                    print(f"E: {fg.RED}{e}{fg.RESET}")
+
 
                 # Flush old IP addresses
                 command.run([
@@ -643,6 +849,8 @@ class NetServices:
 
                 print(f"{self.config['bridge_iface']} created.")
             return True
+        except Exception as e:
+            print(f"E: {fg.RED}{e}{fg.RESET}")
         except (subprocess.CalledProcessError, IOError) as e:
             raise f"Failed to set up bridge: {str(e)}"
 

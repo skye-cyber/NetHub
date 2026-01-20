@@ -1,5 +1,6 @@
+import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class BaseConfig:
@@ -13,8 +14,16 @@ class BaseConfig:
     CLIENT_INTERFACE = 'xap0'
     INTERNET_INTERFACE = 'eth0'
 
-    def __init__(self):
+    def __init__(self, config_file: Optional[str] = None, **kwargs):
         self._initialize_paths()
+
+        # Load configuration from file if provided
+        if config_file:
+            self.load_from_json(config_file)
+
+        # Update with any additional kwargs
+        if kwargs:
+            self.update_config(**kwargs)
 
     def _initialize_paths(self):
         """Initialize all path-related attributes"""
@@ -24,23 +33,63 @@ class BaseConfig:
         self.dnsmasq_logfile = Path('/etc/ap_manager/dnsmasq.log')
         self.dnsmasq_leasefile = Path('/var/lib/misc/dnsmasq.leases')
 
-    @classmethod
-    def get_config(cls) -> Dict[str, Any]:
+    def get_config(self) -> Dict[str, Any]:
         """Get all configuration as a dictionary"""
         return {
-            'BASE_DIR': cls.BASE_DIR,
-            'GATEWAY_ADDRESS': cls.GATEWAY_ADDRESS,
-            'SUBNET': cls.SUBNET,
-            'CAPTIVE_PORT': cls.CAPTIVE_PORT,
-            'CLIENT_INTERFACE': cls.CLIENT_INTERFACE,
-            'INTERNET_INTERFACE': cls.INTERNET_INTERFACE,
-            'AUTH_DIR': cls.BASE_DIR / 'auth',
-            'MAC_FILE': (cls.BASE_DIR / 'auth') / 'authenticated_macs'
+            'BASE_DIR': self.BASE_DIR,
+            'GATEWAY_ADDRESS': self.GATEWAY_ADDRESS,
+            'SUBNET': self.SUBNET,
+            'CAPTIVE_PORT': self.CAPTIVE_PORT,
+            'CLIENT_INTERFACE': self.CLIENT_INTERFACE,
+            'INTERNET_INTERFACE': self.INTERNET_INTERFACE,
+            'AUTH_DIR': str(self.AUTH_DIR),
+            'MAC_FILE': str(self.mac_file),
+            'DNSMASQ_CONFIG': str(self.dnsmasq_config),
+            'DNSMASQ_LOGFILE': str(self.dnsmasq_logfile),
+            'DNSMASQ_LEASEFILE': str(self.dnsmasq_leasefile)
         }
 
-    @classmethod
-    def update_config(cls, **kwargs):
+    def update_config(self, **kwargs):
         """Update configuration values"""
         for key, value in kwargs.items():
-            if hasattr(cls, key):
-                setattr(cls, key, value)
+            if hasattr(self, key):
+                setattr(self, key, value)
+            elif hasattr(BaseConfig, key):
+                setattr(BaseConfig, key, value)
+
+    def load_from_json(self, config_file: str) -> bool:
+        """Load configuration from JSON file"""
+        try:
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+                self.update_config(**config_data)
+            return True
+        except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
+            print(f"Error loading config from {config_file}: {e}")
+            return False
+
+    def save_to_json(self, config_file: str) -> bool:
+        """Save current configuration to JSON file"""
+        try:
+            config_data = self.get_config()
+            with open(config_file, 'w') as f:
+                json.dump(config_data, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving config to {config_file}: {e}")
+            return False
+
+    def get_broadcast_address(self) -> str:
+        """Get broadcast address from gateway address"""
+        return f"{'.'.join(self.GATEWAY_ADDRESS.split('.')[:-1])}.255"
+
+    def get_dhcp_range(self) -> str:
+        """Get DHCP range configuration"""
+        return f"{self.SUBNET.split('/')[0].rsplit('.', 1)[0]}.10,{self.SUBNET.split('/')[0].rsplit('.', 1)[0]}.100,255.255.255.0,12h"
+
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'BaseConfig':
+        """Create BaseConfig instance from dictionary"""
+        config = cls()
+        config.update_config(**config_dict)
+        return config

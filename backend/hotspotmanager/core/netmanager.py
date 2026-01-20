@@ -4,7 +4,7 @@ import subprocess
 import time
 from typing import Optional
 from .lock import lock
-from ap_utils.command import command
+from .shared import shared
 
 
 class NetworkManager:
@@ -111,14 +111,9 @@ class NetworkManager:
         except subprocess.CalledProcessError:
             return False
 
-    def is_interface(self, iface=None):
-        """Check if interface exists"""
-        iface = iface if iface else self.config['wifi_iface']
-        return os.path.exists(f"/sys/class/net/{iface}")
-
     def networkmanager_iface_is_unmanaged(self, iface: str) -> bool:
         """Check if the interface is unmanaged by NetworkManager."""
-        if not self.is_interface(iface):
+        if not shared.is_interface(iface):
             return False
 
         if not self.networkmanager_knows_iface(iface):
@@ -354,7 +349,7 @@ class NetworkManager:
             result = self.networkmanager_iface_is_unmanaged(iface)
             if result:
                 return True
-            if not self.ap_man.is_interface(iface):
+            if not shared.is_interface(iface):
                 raise RuntimeError(f"Interface '{iface}' does not exist. "
                                    "It's probably renamed by a udev rule.")
             time.sleep(1)
@@ -370,6 +365,12 @@ class NetworkManager:
     def wifi_switch(self, state="off"):
         try:
             return subprocess.run(['sudo', 'nmcli', 'r', 'wifi', state], check=True)
+        except Exception:
+            return False
+
+    def kill_hostapd(self):
+        try:
+            return subprocess.run(['sudo', 'killall', 'hostapd'], stdout=subprocess.PIPE, error=subprocess.PIPE, check=True)
         except Exception:
             return False
 

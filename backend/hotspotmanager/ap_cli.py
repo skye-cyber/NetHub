@@ -11,6 +11,7 @@ from ap_utils.colors import fg
 
 version = "1.0.0"
 
+
 def config_update(args):
     try:
         args_dict = args.__dict__
@@ -19,8 +20,8 @@ def config_update(args):
             config_manager = ConfigManager(args.config)
 
         # Update main conf
-        config_manager._dict_update(config_manager.get_config, args_dict)
-        config_manager.save_config()
+        # config_manager._dict_update(config_manager.get_config, args_dict)
+        # config_manager.save_config()
 
         # Update hostapd conf
         hostman = ConfigManager(config_manager.__bconfdir__ / 'hostapd.json')
@@ -44,13 +45,14 @@ def main():
     parser.add_argument('--action', default='start', choices=['start', 'stop', 'status', 'configure', 'interfaces'], help='Action to perform')
     parser.add_argument('--wifi_iface', default='wlan0', type=str, help='Wifi interface to use.')
     parser.add_argument('--internet_iface', default="eth0", type=str, help='Internetfacing internet to use')
+    parser.add_argument('--bridge_iface', default="xbr0", type=str, help='Bridge interface if using bridge sharing.')
     parser.add_argument('--ssid', help='SSID for the hotspot')
     parser.add_argument('--password', help='Password for the hotspot')
     parser.add_argument('--interface', help='Wireless interface to use')
     parser.add_argument('--mode', choices=['nmcli', 'systemd'], help='Hotspot mode')
     parser.add_argument('--use_psk', action="store_true", help='Use 64 hex digits pre-shared-key instead of passphrase')
     parser.add_argument('--psk', help='64 hex digits pre-shared-key to be used.')
-    parser.add_argument('-m', "--share-method", default='nat', choices=['nat', 'bridge', 'none'], help="Method for Internet sharing. 'none' for no Internet sharing (equivalent to -n)")
+    parser.add_argument('-m', "--share_method", default='nat', choices=['nat', 'bridge', 'none'], help="Method for Internet sharing. 'none' for no Internet sharing (equivalent to -n)")
     parser.add_argument("-ch", "--channel", default=6, type=int, help="Channel number (default: 6)")
     parser.add_argument("-w", '--wpa-version', help="Use 1 for WPA, use 2 for WPA2, use 1+2 for both (default: 2)")
     parser.add_argument("-n", action='store_true', help="Disable Internet sharing (if you use this, don't pass the <interface-with-internet> argument)")
@@ -72,7 +74,7 @@ def main():
     parser.add_argument("--driver", help="Choose your WiFi adapter driver (default: nl80211)")
     parser.add_argument("--no-virt", action='store_true', help="Do not create virtual interface")
     parser.add_argument("--no-haveged", action='store_true', help="Do not run 'haveged' automatically when needed")
-    parser.add_argument("--fix-unmanaged", action='store_true', help="If NetworkManager shows your interface as unmanaged after you close create_ap, then use this option to switch your interface back to managed")
+    parser.add_argument("--fix-unmanaged", action='store_true', help="If NetworkManager shows your interface as unmanaged after you close ap_manager, then use this option to switch your interface back to managed")
     parser.add_argument("--mac", type=str, help="Set MAC address")
     parser.add_argument("--dhcp-dns", nargs="+", help="Set DNS returned by DHCP <IP1[,IP2]>")
     parser.add_argument("--dhcp-hosts", nargs="+", help="<H1 H2> Add list of dnsmasq.conf 'dhcp-host='\
@@ -80,13 +82,13 @@ def main():
         /etc/hosts. Othwise, the following syntax would work --dhcp-hosts \'192.168.12.2' '192.168.12.3'  See https://github.com/imp/dnsmasq/blob/\
         770bce967cfc9967273d0acfb3ea018fb7b17522/dnsmasq.conf.example#L238 for other valid\
         dnsmasq dhcp-host parameters.")
-    parser.add_argument("--daemon", action='store_true', help="Run create_ap in the background")
+    parser.add_argument("--daemon", action='store_true', help="Run ap_manager in the background")
     parser.add_argument("--pidfile", help="Save daemon PID to file")
     parser.add_argument("--logfile", help="Save daemon messages to file")
     parser.add_argument("--dns-logfile", help="Log DNS queries to file")
-    parser.add_argument("--stop-pid", type=int, help="Send stop command to an already running create_ap. For an <id> you can put the PID of create_ap or the WiFi interface. You can get them with --list-running")
-    parser.add_argument("--list-running", action='store_true', help="Show the create_ap processes that are already running")
-    parser.add_argument("--list-clients", action='store_true', help="List the clients connected to create_ap instance associated with <id>.  For an <id> you can put the PID of create_ap or the WiFi interface. If virtual WiFi interface was created, then use that one. You can get them with --list-running")
+    parser.add_argument("--stop-pid", type=int, help="Send stop command to an already running ap_manager. For an <id> you can put the PID of ap_manager or the WiFi interface. You can get them with --list-running")
+    parser.add_argument("--list-running", action='store_true', help="Show the ap_manager processes that are already running")
+    parser.add_argument("--list-clients", action='store_true', help="List the clients connected to ap_manager instance associated with <id>.  For an <id> you can put the PID of ap_manager or the WiFi interface. If virtual WiFi interface was created, then use that one. You can get them with --list-running")
 
     # parser.add_argument("Non-Bridging Options:")
     parser.add_argument("--no-dns", action='store_true', help="Disable dnsmasq DNS server")
@@ -200,6 +202,7 @@ class ArgumentValidator:
     def _validate_password(self, args):
         """Validate password input."""
         if not args.use_psk and not args.password:
+            return
             default_paswd = self.manager.config.get('password', None)
             if default_paswd:
                 args.password = default_paswd

@@ -1,19 +1,21 @@
 import subprocess
 import re
-from pathlib import Path
 from typing import List, Callable, Optional
+
+from .config import BaseConfig
 
 
 class Firewall:
-    def __init__(self):
-        self.client_interface = 'xap0'
-        self.internet_interface = 'eth0'
-        self.BASE_DIR = '/etc/ap_manager'
-        self.gateway_address = "192.168.100.1"
-        self.subnet = "192.168.100.0/24"
-        self.captive_port = '8888'
-        self.AUTH_DIR = Path(self.BASE_DIR) / 'auth'
-        self.mac_file = self.AUTH_DIR / 'authenticated_macs'
+    def __init__(self, config: BaseConfig = BaseConfig()):
+        self.config = config if config else BaseConfig()
+        self.client_interface = self.config.CLIENT_INTERFACE
+        self.internet_interface = self.config.INTERNET_INTERFACE
+        self.BASE_DIR = self.config.BASE_DIR
+        self.gateway_address = self.config.GATEWAY_ADDRESS
+        self.subnet = self.config.SUBNET
+        self.captive_port = self.config.CAPTIVE_PORT
+        self.AUTH_DIR = self.config.AUTH_DIR
+        self.mac_file = self.config.mac_file
 
     def get_existing(self) -> int:
         """Get count of existing MAC rules in CAPTIVE_PORTAL chain"""
@@ -107,5 +109,5 @@ class Firewall:
         return True
 
 
-# Initialize firewall instance
+# Initialize firewall instance with shared config
 firewall = Firewall()

@@ -25,7 +25,6 @@ class CommandHelper:
                 # Prepend sudo if not already present
                 if not cmd[0] == 'sudo':
                     cmd = ['sudo'] + cmd
-
             result = subprocess.run(
                 cmd,
                 check=check,
@@ -34,7 +33,7 @@ class CommandHelper:
             )
             return result
 
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             if force_return:
                 print(f"\n{fg.FRED}Command failed{fg.RESET}: {fg.FWHITE}{' '.join(cmd)}{fg.RESET}")
                 return {'status': 'error'}
@@ -42,7 +41,7 @@ class CommandHelper:
             msg = f"Command failed: {' '.join(cmd)}"
             return self.error_handler(msg, self.clean)
         except Exception as e:
-            msg = f"Error running command: {str(e)}"
+            msg = f"Error running command: {str(e)}: {' '.join(cmd)}"
             return self.error_handler(msg, self.clean)
 
     def error_handler(self, error, callback=None):

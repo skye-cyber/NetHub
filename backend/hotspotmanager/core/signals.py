@@ -51,7 +51,7 @@ class SignalHandler:
 
         # Wifi restart
         self.ap_man.netmanager.wifi_switch(state="off")
-        # self.ap_man.netmanager.wifi_switch(state="on")
+        self.ap_man.netmanager.wifi_switch(state="on")
 
         # Exit with success status
         sys.exit(0)

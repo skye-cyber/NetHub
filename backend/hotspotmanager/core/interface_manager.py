@@ -12,6 +12,7 @@ from ap_utils.colors import fg
 from ap_utils.command import command
 from ap_utils.copy import cp_n_safe
 from .services import netservice
+from .shared import shared
 
 
 class InterfaceManager:
@@ -82,8 +83,8 @@ class InterfaceManager:
             if self.config['share_method'] == "bridge":
                 if self.is_bridge_interface(self.config['internet_iface']):
                     self.config['bridge_iface'] = self.config['internet_iface']
-                else:
-                    self.config['bridge_iface'] = self.alloc_new_iface('xbr')
+                # else:
+                # self.config['bridge_iface'] = self.alloc_new_iface('xbr')
 
             # Setup frequency and channel
             self.setup_frequency_and_channel()
@@ -124,7 +125,7 @@ class InterfaceManager:
             time.sleep(2)
 
             # Start services [hostapd, dnsmasq, dns, internet sharing]
-            netservice.start()
+            hostapd_process = netservice.start()
 
             # Wifi on
             self.netmanager.wifi_switch(state='on')
@@ -154,11 +155,18 @@ class InterfaceManager:
 
             # Make interface unmanaged if needed
             try:
-                self.make_interface_unmanaged()
+                self.netmanager.networkmanager_rm_unmanaged()
+                self
             except Exception as e:
                 self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
 
-            return True
+            try:
+                # print(f"\n{fg.BWHITE}HOSTAPD: {fg.GREEN}running{fg.RESET}")
+                # hostapd_process.wait()
+                ...  # netservice.handle_hostapd_err()
+            except Exception as e:
+                print(f"ERR(H): {fg.RED}{e}{fg.RESET}")
+                netservice.handle_hostapd_err()
 
         except Exception as e:
             self.clean.die(f"Initialization failed: {str(e)}")
@@ -262,10 +270,12 @@ class InterfaceManager:
         try:
             # Set MAC address if virtualization is enabled and MAC is specified
             if not self.config.get('no_virt', False) and self.config.get('mac'):
+                self.netmanager.wifi_switch(state='off')
                 command.run([
                     'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
+                self.netmanager.wifi_switch(state='on')
 
             print('Flush addresses')
             # Bring interface down and flush addresses
@@ -387,10 +397,8 @@ class InterfaceManager:
         first_byte = int(mac.split(':')[0], 16)
         return first_byte % 2 == 0
 
-    def is_interface(self, iface=None):
-        """Check if interface exists"""
-        iface = iface if iface else self.config['vwifi_iface']
-        return os.path.exists(f"/sys/class/net/{iface}")
+    def is_interface(self, iface=None) -> bool:
+        return shared.is_interface(iface)
 
     def get_mac_address(self, iface=None):
         """Get MAC address of an interface"""
@@ -418,12 +426,12 @@ class InterfaceManager:
         """Allocate a new interface name"""
         prefix = prefix if prefix else self.config['vwifi_iface']
         # if interface is say wlan0 use wlan as the prefix
-        if prefix.split('')[-1].isnumeric():
-            prefix = prefix.rsplit('', 1)[0]
+        if prefix[-1].isnumeric():
+            prefix = prefix[:-1]
         i = 0
         self.lock.mutex_lock()
         try:
-            while True:
+            while i > 100:
                 iface_name = f"{prefix}{i}"
                 if not self.is_interface(iface_name) and not os.path.exists(f"{self.conf_dir}/ifaces/{iface_name}"):
                     os.makedirs(f"{self.conf_dir}/ifaces", exist_ok=True)
@@ -587,10 +595,8 @@ class InterfaceManager:
         print("Failed to get phy interface - no wireless devices found")
         return None
 
-    def is_bridge_interface(self, _iface=None):
-        """Check if interface is a bridge interface"""
-        iface = _iface if _iface else self.config['vwifi_iface']
-        return os.path.exists(f"/sys/class/net/{iface}/bridge")
+    def is_bridge_interface(self, iface=None):
+        return shared.is_bridge_interface(iface)
 
     def is_wifi_interface(self, _iface=None):
         """Check if interface is a WiFi interface"""
@@ -665,4 +671,7 @@ class InterfaceManager:
             self.lock.mutex_unlock()
 
         return None
+
+    def is_interface_configured(self, iface=None) -> bool:
+        return shared.is_interface_configured(iface)
 

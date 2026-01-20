@@ -54,7 +54,6 @@ class ConfigManager:
         """
         if not d1:
             d1 = self.config
-
         return d1.update({k.lower(): v for k, v in d2.items() if v and k in config_manager.config.keys()}) if d1 and d2 else d1 or {}
 
     @property
