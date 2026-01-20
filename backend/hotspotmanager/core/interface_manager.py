@@ -117,18 +117,8 @@ class InterfaceManager:
             # Create virtual interface
             self.create_virtual_interface()
 
-            # unblock rfkill first
-            self.netmanager.rfkill_off(iface="all")
-
-            # Wifi off first
-            self.netmanager.wifi_switch(state="off")
-            time.sleep(2)
-
             # Start services [hostapd, dnsmasq, dns, internet sharing]
-            hostapd_process = netservice.start()
-
-            # Wifi on
-            self.netmanager.wifi_switch(state='on')
+            netservice.start()
 
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
@@ -155,18 +145,10 @@ class InterfaceManager:
 
             # Make interface unmanaged if needed
             try:
-                self.netmanager.networkmanager_rm_unmanaged()
-                self
+                self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
+                shared.restart_hostapd()
             except Exception as e:
                 self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
-
-            try:
-                # print(f"\n{fg.BWHITE}HOSTAPD: {fg.GREEN}running{fg.RESET}")
-                # hostapd_process.wait()
-                ...  # netservice.handle_hostapd_err()
-            except Exception as e:
-                print(f"ERR(H): {fg.RED}{e}{fg.RESET}")
-                netservice.handle_hostapd_err()
 
         except Exception as e:
             self.clean.die(f"Initialization failed: {str(e)}")

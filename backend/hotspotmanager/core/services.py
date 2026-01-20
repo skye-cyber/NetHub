@@ -8,6 +8,7 @@ from ap_utils.command import command
 from ap_utils.config import config_manager
 from .netmanager import netmanager
 from .shared import shared
+import shutil
 
 
 class NetServices:
@@ -25,6 +26,7 @@ class NetServices:
     def configure(self):
         print("Configuring services ...")
         self.configure_hostapd()
+        self.update_global_hostapd()
 
         # Configure dnsmasq if not using bridge and not disabled
         if self.config.get('share_method') != "bridge" and not self.config.get('no_dnsmasq', False):
@@ -33,12 +35,6 @@ class NetServices:
     def start(self):
         self.enable_internet_sharing()
         self.start_dhcp_dns()
-        # self.start_ap()
-        proc = self.start_hostapd()
-        if self.hostapd_process:
-            return self.hostapd_process
-
-        return proc or False
 
     def get_dhcp_range(self) -> str:
         """Get DHCP range configuration"""
@@ -126,6 +122,9 @@ class NetServices:
 
         except (IOError, KeyError) as e:
             sys.exit(f"Failed to configure hostapd: {str(e)}")
+
+    def update_global_hostapd(self):
+        shutil.copy(os.path.join(self.conf_dir, 'hostapd.conf'), '/etc/hostapd/')
 
     def _configure_wpa_settings(self, f):
         """Configure WPA/WPA2/WPA3 settings in the hostapd configuration file"""
@@ -285,248 +284,6 @@ class NetServices:
         except (subprocess.CalledProcessError, IOError, KeyError) as e:
 
             sys.exit(f"Failed to configure dnsmasq: {str(e)}")
-
-    def __start_hostapd(self):
-        """Start hostapd with proper error handling and output buffering."""
-        # Check if stdbuf is available for unbuffered output
-        stdbuf_path = None
-        try:
-            result = subprocess.run(['which', 'stdbuf'],
-                                    capture_output=True, text=True,
-                                    check=True)
-            stdbuf_path = result.stdout.strip()
-        except subprocess.CalledProcessError:
-            pass
-
-        # Build the hostapd command
-        hostapd_cmd = []
-        if stdbuf_path:
-            hostapd_cmd.extend([stdbuf_path, '-oL'])
-
-        hostapd_cmd.extend([
-            self.config['hostapd_path'],
-            *self.config.get('hostapd_debug_args', []),
-            os.path.join(self.conf_dir, 'hostapd.conf')
-        ])
-
-        # Start hostapd in the background
-        try:
-            # Use Popen to start hostapd in the background
-            self.hostapd_process = subprocess.Popen(
-                hostapd_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-
-            # Save the PID
-            self.hostapd_pid = self.hostapd_process.pid
-            with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
-                f.write(str(self.hostapd_pid))
-            print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
-
-            # Check if hostapd started successfully
-            # Wait briefly to see if there's any immediate error output
-            time.sleep(1)  # Give it a moment to start
-
-            # Check for errors in the output
-            error_output = self.hostapd_process.stderr.read()
-            if error_output:
-                print(f"Error: {fg.RED}{error_output}{fg.RESET}")
-
-                # NetworkManager specific suggestions
-                if netmanager.networkmanager_is_running():
-                    print("If an error like 'n80211: Could not configure driver mode' was thrown, ")
-                    if netmanager.NM_OLDER_VERSION:
-                        print("    nmcli nm wifi off")
-                    else:
-                        print("    nmcli r wifi off")
-
-                    print("    rfkill unblock wlan")
-
-                # Clean up and exit
-                print(f"{fg.RED}Hostapd failed to start{fg.RESET}")
-                return False
-
-            return True
-
-        except Exception as e:
-            raise Exception(f"Error starting hostapd: {str(e)}")
-
-    def start_hostapd(self):
-        """Start hostapd with proper error handling and output buffering."""
-        # Check if stdbuf is available for unbuffered output
-
-        # Check if hostapd is already running
-        if self.is_hostapd_running():
-            print("Hostapd is already running")
-            return True
-
-        # Check if the interface is already configured
-        if shared.is_interface_configured(self.config['vwifi_iface']):
-            print("Interface is already configured, restarting hostapd")
-            if not self.restart_hostapd():
-                return False
-
-        stdbuf_path = None
-        try:
-            result = subprocess.run(['which', 'stdbuf'],
-                                    capture_output=True, text=True,
-                                    check=True)
-            stdbuf_path = result.stdout.strip()
-        except subprocess.CalledProcessError:
-            pass
-
-        # Build the hostapd command
-        hostapd_cmd = []
-        if stdbuf_path:
-            hostapd_cmd.extend([stdbuf_path, '-oL'])
-
-        hostapd_cmd.extend([
-            self.config['hostapd_path'],
-            *self.config.get('hostapd_debug_args', []),
-            os.path.join(self.conf_dir, 'hostapd.conf')
-        ])
-
-        # Start hostapd in the background
-        try:
-            netmanager.rfkill_off()
-            netmanager.kill_hostapd()
-
-            try:
-                # Use Popen instead of run to get the process object
-                self.hostapd_process = subprocess.Popen(
-                    hostapd_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    start_new_session=True,  # Create a new session
-                    # preexec_fn=os.setsid,    # Set process group
-                    # close_fds=True,           # Close all file descriptors
-                    text=True
-                )
-            except Exception as e:
-                print("ERR:", e)
-
-            # Save the PID
-            self.hostapd_pid = self.hostapd_process.pid
-
-            with open(os.path.join(self.proc_dir, 'hostapd.pid'), 'w') as f:
-                f.write(str(self.hostapd_pid))
-                print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
-
-            return self.hostapd_process
-        except Exception as e:
-            print(f"Error starting hostapd: {str(e)}")
-            return False
-
-    def handle_hostapd_err(self):
-        # Wait for the process to complete
-        return_code = self.hostapd_process.returncode  # self.hostapd_process.wait()
-
-        if return_code != 0:
-            print(f"Error: {fg.FRED}{self.hostapd_process.stderr.read() or self.hostapd_process.stdout.read()}{fg.RESET}")
-
-            # NetworkManager specific suggestions
-            if netmanager.networkmanager_is_running():
-                print("If an error like 'n80211: Could not configure driver mode' was thrown, "
-                    "try running the following before starting ap_manager:")
-
-                if netmanager.NM_OLDER_VERSION:
-                    print("    nmcli nm wifi off")
-                else:
-                    print("    nmcli r wifi off")
-
-                print("    rfkill unblock wlan")
-
-            # Clean up and exit
-            print(f"{fg.RED}Hostapd failed to start{fg.RESET}")
-
-    def stop_hostapd(self) -> bool:
-        """Stop hostapd process if it's running.
-
-        Returns:
-            bool: True if hostapd was stopped successfully, False otherwise
-        """
-        if hasattr(self, 'hostapd_process') and self.hostapd_process:
-            try:
-                # First try to terminate gracefully
-                self.hostapd_process.terminate()
-                try:
-                    self.hostapd_process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    # If still running after 5 seconds, kill it
-                    self.hostapd_process.kill()
-
-                # Clean up
-                self.hostapd_process = None
-                self.hostapd_pid = None
-
-                # Remove PID file
-                pid_file = os.path.join(self.proc_dir, 'hostapd.pid')
-                if os.path.exists(pid_file):
-                    os.remove(pid_file)
-
-                print("Hostapd stopped successfully")
-                return True
-            except Exception as e:
-                print(f"Error stopping hostapd: {str(e)}")
-                return False
-        return True
-
-    def restart_hostapd(self) -> bool:
-        """Restart hostapd by stopping and starting it.
-
-        Returns:
-            bool: True if hostapd was restarted successfully, False otherwise
-        """
-        print("Restarting hostapd")
-
-        # First stop hostapd if it's running
-        if self.is_hostapd_running():
-            if not self.stop_hostapd():
-                print("Failed to stop hostapd")
-                return False
-
-        # Small delay before restarting
-        time.sleep(1)
-
-        # Then start hostapd
-        return self.start_hostapd()
-
-    def is_hostapd_running(self) -> bool:
-        """Check if hostapd is running.
-
-        Returns:
-            bool: True if hostapd is running, False otherwise
-        """
-        if hasattr(self, 'hostapd_process') and self.hostapd_process:
-            return self.hostapd_process.poll() is None
-        return False
-
-    def get_hostapd_logs(self) -> tuple:
-        """Get the contents of hostapd log files.
-
-        Returns:
-            tuple: (stdout_log, stderr_log) contents as strings
-        """
-        stdout_log = os.path.join(self.proc_dir, 'hostapd.stdout.log')
-        stderr_log = os.path.join(self.proc_dir, 'hostapd.stderr.log')
-
-        stdout_content = ""
-        stderr_content = ""
-
-        try:
-            if os.path.exists(stdout_log):
-                with open(stdout_log, 'r') as f:
-                    stdout_content = f.read()
-
-            if os.path.exists(stderr_log):
-                with open(stderr_log, 'r') as f:
-                    stderr_content = f.read()
-        except IOError as e:
-            print(f"Error reading hostapd logs: {str(e)}")
-
-        return stdout_content, stderr_content
 
     def dhcp_service_nodns(self):
         return

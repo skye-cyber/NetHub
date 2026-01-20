@@ -48,8 +48,6 @@ class Shared:
             result = subprocess.run(['pidof', 'dnsmasq'],
                                     capture_output=True, text=True)
 
-            print(result.stdout)
-
             if result.stdout and int(result.stdout.split(' ')[0]) and result.returncode == 0:
                 return True
             return False
@@ -64,8 +62,6 @@ class Shared:
             # Restart
             subprocess.run(['sudo', 'systemctl', 'restart', 'dnsmasq'],
                            capture_output=True, text=True)
-
-            print(result.stdout)
 
             if result.returncode == 0:
                 return True
@@ -83,6 +79,19 @@ class Shared:
         """Check if interface exists"""
         iface = iface if iface else self.config['vwifi_iface']
         return os.path.exists(f"/sys/class/net/{iface}")
+
+    def restart_hostapd(self) -> bool:
+        try:
+            # Restart
+            result = subprocess.run(['sudo', 'systemctl', 'restart', 'hostapd'],
+                                    capture_output=True, text=True)
+
+            if result.returncode == 0:
+                return True
+            return False
+        except Exception as e:
+            print(f"Error killing dnsmasq status: {str(e)}")
+            return False
 
 
 shared = Shared()

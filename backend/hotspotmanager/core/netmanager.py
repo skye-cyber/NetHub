@@ -238,7 +238,7 @@ class NetworkManager:
                 return False
 
         # Lock mutex
-        self.mutex_lock()
+        self.lock.mutex_lock()
         try:
             # Read current unmanaged devices
             unmanaged = None
@@ -303,7 +303,7 @@ class NetworkManager:
         except Exception:
             pass
         finally:
-            self.mutex_unlock()
+            self.lock.mutex_unlock()
 
     def networkmanager_fix_unmanaged(self) -> None:
         """Remove all unmanaged devices from NetworkManager configuration."""
