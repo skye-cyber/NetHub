@@ -24,7 +24,9 @@ class SignalHandler:
 
     def handle_signal(self, signum, frame):
         """Handle signals received by the application."""
-        if signum == signal.SIGINT or signum == signal.SIGUSR1:
+        if signum == signal.SIGINT:
+            sys.exit(1)
+        if signum == signal.SIGUSR1:
             self.clean_exit()
         elif signum == signal.SIGUSR2:
             self.die()
