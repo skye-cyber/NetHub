@@ -1,336 +1,472 @@
 #!/usr/bin/env python
-import argparse
-import sys
-import re
+"""
+AP Manager CLI - Modernized with Click and Rich
+"""
+
 import os
+import sys
+from pathlib import Path
+from typing import Optional, List
+
+import click
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.prompt import Prompt, Confirm
+from rich import print as rprint
+
+# Local imports
 from ap_manager import ApManager
 from ap_utils.config import ConfigManager
-import getpass
-from typing import Union
 from ap_utils.colors import fg
 from captive_portal.core.captive_entry import Captive
 from captive_portal.core.config import BaseConfig
 
+console = Console()
 version = "1.0.0"
 
-
-def config_update(args):
-    try:
-        from ap_utils.config import config_manager
-        args_dict = args.__dict__
-
-        # Update Configuration
-        if args.config and os.path.exists(args.config):
-            config_manager = ConfigManager(args.config)
-
-        # Update main conf
-        config_manager._dict_update(config_manager.get_config, args_dict)
-
-        config_manager.save_config()
-
-        # Update hostapd conf
-        hostman = ConfigManager(config_manager.__bconfdir__ / 'hostapd.json')
-        hostman._dict_update(None, args_dict)
-        hostman.save_config()
-
-        # Update network conf
-        netman = ConfigManager(config_manager.__bconfdir__ / 'netconf.json')
-        netman._dict_update(None, args_dict)
-        netman.save_config()
-
-        return True
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        print(e)
-        return False
+# ==================== CLI Setup ====================
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Custom AP Manager')
-    parser.add_argument('--action', default='start', choices=['start', 'stop', 'status', 'configure', 'interfaces', 'firewall_start', 'firewall_stop', 'firewall_status', 'firewall_check', 'firewall_test', 'firewall_debug'], help='Action to perform')
-    parser.add_argument('--wifi_iface', default='wlan0', type=str, help='Wifi interface to use.')
-    parser.add_argument('--internet_iface', default="wlan0", type=str, help='Internetfacing internet to use')
-    parser.add_argument('--bridge_iface', default="xbr0", type=str, help='Bridge interface if using bridge sharing.')
-    parser.add_argument("--gateway", type=str, help="IPv4 Gateway for the Access Point (default: 192.168.100.1)")
-    parser.add_argument('--ssid', help='SSID for the hotspot')
-    parser.add_argument('--password', help='Password for the hotspot')
-    parser.add_argument('--interface', help='Wireless interface to use')
-    parser.add_argument('--mode', choices=['nmcli', 'systemd'], help='Hotspot mode')
-    parser.add_argument('--use_psk', action="store_true", help='Use 64 hex digits pre-shared-key instead of passphrase')
-    parser.add_argument('--psk', help='64 hex digits pre-shared-key to be used.')
-    parser.add_argument('-m', "--share_method", default='nat', choices=['nat', 'bridge', 'none'], help="Method for Internet sharing. 'none' for no Internet sharing (equivalent to -n)")
-    parser.add_argument("-ch", "--channel", default=6, type=int, help="Channel number (default: 6)")
-    parser.add_argument("-w", '--wpa-version', help="Use 1 for WPA, use 2 for WPA2, use 1+2 for both (default: 2)")
-    parser.add_argument("-n", action='store_true', help="Disable Internet sharing (if you use this, don't pass the <interface-with-internet> argument)")
+class APManagerCLI:
+    """Main CLI controller"""
 
-    parser.add_argument("--hidden", action='store_true', help="Make the Access Point hidden (do not broadcast the SSID)")
-    parser.add_argument("--mac-filter", action='store_true', help="Enable MAC address filtering")
-    parser.add_argument("--mac-filter-accept", action='store_true', help="Location of MAC address filter list (defaults to /etc/hostapd/hostapd.accept)")
-    parser.add_argument("--redirect-to-localhost", action='store_true', help="If -n is set, redirect every web request to localhost (useful for public information networks)")
-    parser.add_argument("--hostapd-debug", type=int, default=0, help="With level between 1 and 2, passes arguments -d or -dd to hostapd for debugging.")
-    parser.add_argument("--hostapd-timestamps", action='store_true', help="Include timestamps in hostapd debug messages.")
-    parser.add_argument("--isolate-clients", action='store_true', help="Disable communication between clients")
-    parser.add_argument("--ieee80211n", action='store_true', help="Enable IEEE 802.11n (HT)")
-    parser.add_argument("--ieee80211ac", action='store_true', help="Enable IEEE 802.11ac (VHT)")
-    parser.add_argument("--ieee80211ax", action='store_true', help="Enable IEEE 802.11ax (VHT)")
-    parser.add_argument("--ht_capab", help="HT capabilities (default: [HT40+])")
-    parser.add_argument("--vht_capab", help="VHT capabilities")
-    parser.add_argument("--country", help="Set two-letter country code for regularity (example: US)")
-    parser.add_argument("--freq-band", default=2.4, type=Union[int, float], help="Set frequency band. Valid inputs: 2.4, 5 (default: Use 5GHz if the interface supports it)")
-    parser.add_argument("--driver", help="Choose your WiFi adapter driver (default: nl80211)")
-    parser.add_argument("--no-virt", action='store_true', help="Do not create virtual interface")
-    parser.add_argument("--no-haveged", action='store_true', help="Do not run 'haveged' automatically when needed")
-    parser.add_argument("--fix-unmanaged", action='store_true', help="If NetworkManager shows your interface as unmanaged after you close ap_manager, then use this option to switch your interface back to managed")
-    parser.add_argument("--mac", type=str, help="Set MAC address")
-    parser.add_argument("--dhcp-dns", nargs="+", help="Set DNS returned by DHCP <IP1[,IP2]>")
-    parser.add_argument("--dhcp-hosts", nargs="+", help="<H1 H2> Add list of dnsmasq.conf 'dhcp-host='\
-        values If ETC_HOSTS=1, it will use the ip addresses for the named hosts in that\
-        /etc/hosts. Othwise, the following syntax would work --dhcp-hosts \'192.168.12.2' '192.168.12.3'  See https://github.com/imp/dnsmasq/blob/\
-        770bce967cfc9967273d0acfb3ea018fb7b17522/dnsmasq.conf.example#L238 for other valid\
-        dnsmasq dhcp-host parameters.")
-    parser.add_argument("--daemon", action='store_true', help="Run ap_manager in the background")
-    parser.add_argument("--pidfile", help="Save daemon PID to file")
-    parser.add_argument("--logfile", help="Save daemon messages to file")
-    parser.add_argument("--dns-logfile", help="Log DNS queries to file")
-    parser.add_argument("--stop-pid", type=int, help="Send stop command to an already running ap_manager. For an <id> you can put the PID of ap_manager or the WiFi interface. You can get them with --list-running")
-    parser.add_argument("--list-running", action='store_true', help="Show the ap_manager processes that are already running")
-    parser.add_argument("--list-clients", action='store_true', help="List the clients connected to ap_manager instance associated with <id>.  For an <id> you can put the PID of ap_manager or the WiFi interface. If virtual WiFi interface was created, then use that one. You can get them with --list-running")
+    def __init__(self):
+        self.manager = ApManager()
+        self.config_manager = None
+        self.captive = None
 
-    # parser.add_argument("Non-Bridging Options:")
-    parser.add_argument("--no-dns", action='store_true', help="Disable dnsmasq DNS server")
-    parser.add_argument("--no-dnsmasq", action='store_true', help="Disable dnsmasq server completely")
-    parser.add_argument("-d", action='store_true', help="DNS server will take into account /etc/hosts")
-    parser.add_argument("-e", action='store_true', help="DNS server will take into account additional hosts file")
-    parser.add_argument("-c", "--config", help="Config file with default values.")
+    def load_config(self, config_file: Optional[str] = None):
+        """Load configuration"""
+        if config_file and Path(config_file).exists():
+            self.config_manager = ConfigManager(config_file)
+        else:
+            self.config_manager = ConfigManager()
 
-    parser.add_argument("--version", action="store_true", help="Print version number")
+        # Initialize captive portal with config
+        self.captive = Captive(BaseConfig(config_file=config_file))
 
-    args = parser.parse_args()
+    def update_config(self, **kwargs):
+        """Update configuration with provided values"""
+        if not self.config_manager:
+            self.load_config()
 
-    validate_arguments(args)
+        # Filter out None values
+        updates = {k: v for k, v in kwargs.items() if v is not None}
+
+        if updates:
+            # Update main config
+            self.config_manager._dict_update(self.config_manager.get_config, updates)
+            self.config_manager.save_config()
+
+            # Update hostapd config if relevant keys
+            hostapd_keys = {'ssid', 'password', 'channel', 'wpa_version', 'hidden'}
+            if any(k in hostapd_keys for k in updates):
+                hostman = ConfigManager(self.config_manager.__bconfdir__ / 'hostapd.json')
+                hostman._dict_update(None, updates)
+                hostman.save_config()
+
+            # Update network config if relevant keys
+            network_keys = {'wifi_iface', 'internet_iface', 'gateway', 'share_method'}
+            if any(k in network_keys for k in updates):
+                netman = ConfigManager(self.config_manager.__bconfdir__ / 'netconf.json')
+                netman._dict_update(None, updates)
+                netman.save_config()
+
+            console.print("[green]✓ Configuration updated[/green]")
+
+# ==================== CLI Commands ====================
 
 
-class ArgumentValidator:
-    def __init__(self, manager):
-        self.manager = manager
-        self.args = None
-        self.validation_map = {
-            'version': self._validate_version,
-            'freq_band': self._validate_freq_band,
-            'wifi_interface': self._validate_wifi_interface,
-            'ap_support': self._validate_ap_support,
-            'sta_ap_conflict': self._validate_sta_ap_conflict,
-            'hostapd': self._validate_hostapd,
-            'rtl871x': self.validate_rtl871x,
-            'mac_address': self._validate_mac_address,
-            'ssid': self._validate_ssid,
-            'password': self._validate_password,
-            'psk': self._validate_psk,
-            'internet_interface': self._validate_internet_interface,
-            'realtek_warning': self._validate_realtek_warning,
-            'virtual_interface': self._validate_virtual_interface
-        }
+@click.group(invoke_without_command=True)
+@click.option('--config', '-c', type=click.Path(exists=True),
+              help='Configuration file path')
+@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
+@click.pass_context
+def cli(ctx, config, verbose):
+    """AP Manager - Hotspot and Captive Portal Management"""
+    ctx.ensure_object(dict)
+    ctx.obj['cli'] = APManagerCLI()
+    ctx.obj['verbose'] = verbose
+    ctx.obj['config'] = config
 
-    def validate(self, args):
-        """Validate all arguments using the validation map."""
-        self.args = args
-        for key, validator in self.validation_map.items():
-            validator(args)
+    # Load config
+    ctx.obj['cli'].load_config(config)
 
-        return args
+    # Show help if no subcommand
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
-    def _validate_version(self, args):
-        """Handle version request."""
-        if args.version:
-            sys.exit(version)
+# ==================== HOTSPOT COMMANDS ====================
 
-    def _validate_freq_band(self, args):
-        """Validate frequency band and channel settings."""
-        if args.freq_band and int(args.freq_band) != 5 and int(args.channel) > 14:
-            print("Channel number is greater than 14, assuming 5GHz frequency band")
-            args.channel = 5
 
-    def _validate_wifi_interface(self, args):
-        """Validate WiFi interface."""
-        if not self.manager.is_wifi_interface(args.wifi_iface):
-            sys.exit(f"ERROR: '{args.wifi_iface}' is not a WiFi interface")
+@cli.group()
+def hotspot():
+    """Hotspot management commands"""
+    pass
 
-    def _validate_ap_support(self, args):
-        """Validate AP mode support."""
-        if not self.manager.can_be_ap(args.wifi_iface):
-            sys.exit("ERROR: Your adapter does not support AP (master) mode")
 
-    def _validate_sta_ap_conflict(self, args):
-        """Validate STA and AP mode conflict."""
-        if not self.manager.can_be_sta_and_ap(args.wifi_iface):
-            if self.manager.is_wifi_connected(args.wifi_iface):
-                sys.exit("ERROR: Your adapter can not be a station and an AP at the same time")
-            elif not args.no_virt:
-                args.no_virt = False
-                print("WARN: Your adapter does not fully support AP virtual interface, enabling --no-virt")
+@hotspot.command('start')
+@click.option('--wifi-iface', default='wlan0', help='WiFi interface to use')
+@click.option('--internet-iface', default='wlan0', help='Internet-facing interface')
+@click.option('--ssid', help='SSID for the hotspot')
+@click.option('--password', help='Password for the hotspot')
+@click.option('--channel', default=6, type=int, help='Channel number')
+@click.option('--share-method', type=click.Choice(['nat', 'bridge', 'none']),
+              default='nat', help='Internet sharing method')
+@click.option('--no-virt', is_flag=True, help='Do not create virtual interface')
+@click.option('--daemon', '-d', is_flag=True, help='Run in background')
+@click.pass_context
+def hotspot_start(ctx, wifi_iface, internet_iface, ssid, password, channel,
+                  share_method, no_virt, daemon):
+    """Start the hotspot"""
+    cli_obj = ctx.obj['cli']
 
-    def _validate_hostapd(self, args):
-        """Validate hostapd availability."""
-        if not self.manager.has_hostapd:
-            sys.exit("ERROR: hostapd not found.")
+    # Update config with CLI options
+    updates = {
+        'wifi_iface': wifi_iface,
+        'internet_iface': internet_iface,
+        'ssid': ssid,
+        'password': password,
+        'channel': channel,
+        'share_method': share_method,
+        'no_virt': no_virt,
+        'daemon': daemon
+    }
+    cli_obj.update_config(**updates)
 
-    def validate_rtl871x(self, args):
-        """Validate RTL871x driver requirements."""
-        # Check if the kernel module matches the pattern
-        kernel_module = self.manager.get_adapter_kernel_module(args.wifi_iface)
-        if re.match(r'^(8192[cd][ue]|8723a[sue])$', kernel_module):
-            # Check if hostapd has the rtl871xdrv patch
-            try:
-                with open(self.manager.where_hostapd, 'rb') as f:
-                    if b'rtl871xdrv' not in f.read():
-                        sys.exit("ERROR: You need to patch your hostapd with rtl871xdrv patches.")
-            except IOError:
-                sys.exit("ERROR: Could not read hostapd binary.")
+    # Show progress
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("Starting hotspot...", total=None)
 
-    def _validate_mac_address(self, args):
-        """Validate MAC address."""
-        if args.mac:
-            if not self.manager.is_macaddr(args.mac):
-                sys.exit(f"ERROR: '{args.mac}' is not a valid MAC address")
+        # Start hotspot
+        try:
+            success = cli_obj.manager._ap_init_()
+            progress.update(task, completed=100)
 
-            if self.manager.is_unicast_macaddr(args.mac):
-                sys.exit(f"ERROR: The first byte of MAC address ({args.mac}) must be even")
-
-            if args.mac in self.manager.get_all_macaddrs():
-                print(f"WARN: MAC address '{args.mac}' already exists. Because of this, you may encounter some problems")
-
-    def _validate_ssid(self, args):
-        """Validate SSID length."""
-        if args.ssid and not (1 <= len(args.ssid) <= 32):
-            sys.exit(f"ERROR: Invalid SSID length {len(args.ssid)} (expected 1..32)")
-
-    def _validate_password(self, args):
-        """Validate password input."""
-        if not args.use_psk and not args.password:
-            return
-            default_paswd = self.manager.config.get('password', None)
-            if default_paswd:
-                args.password = default_paswd
-                return default_paswd
-
-            args.password = self._get_password_input(
-                "Enter wifi password:",
-                min_length=8,
-                max_length=63
-            )
-
-    def _validate_psk(self, args):
-        """Validate PSK input."""
-        if args.use_psk and not args.psk:
-            default_psk = self.manager.config.get('psk', None)
-            if default_psk:
-                args.password = default_psk
-                return default_psk
-
-            args.psk = self._get_password_input(
-                "Enter psk(pre-shared-key):",
-                length=64
-            )
-
-    def _validate_internet_interface(self, args):
-        """Validate internet interface for sharing."""
-        if args.share_method != "none" and not self.manager.is_interface(args.internet_iface):
-            sys.exit(f"ERROR: '{args.internet_iface}' is not an interface")
-
-    def _validate_realtek_warning(self, args):
-        """Handle Realtek driver warnings."""
-        if bool(re.search(r'{rtl\[0-9\]\.*}', self.manager.get_adapter_kernel_module(args.wifi_iface))):
-            if args.password:
-                print("WARN: Realtek drivers usually have problems with WPA1, enabling -w 2")
-                args.wpa_version = 2
-            print("WARN: If AP doesn't work, please read: howto/realtek.md")
-
-    def _validate_virtual_interface(self, args):
-        """Validate virtual interface settings."""
-        if args.no_virt and args.wifi_iface == args.internet_iface:
-            sys.exit("ERROR: You can not share your connection from the same interface if you are using --no-virt option.")
-
-            config_update(args)
-            self.manager._ap_init_()
-
-    def _get_password_input(self, prompt, min_length=None, max_length=None, length=None):
-        """Get password input with validation."""
-        retries = 0
-        while retries < 3:
-            password = getpass.getpass(prompt)
-            if length and len(password) != length:
-                print(f"ERROR: Invalid length, expected {length} characters")
-            elif min_length and len(password) < min_length:
-                print(f"ERROR: Too short, minimum {min_length} characters required")
-            elif max_length and len(password) > max_length:
-                print(f"ERROR: Too long, maximum {max_length} characters allowed")
+            if success:
+                console.print(Panel.fit(
+                    "[bold green]✓ Hotspot started successfully![/bold green]\n\n"
+                    f"[cyan]SSID:[/cyan] {ssid or 'From config'}\n"
+                    f"[cyan]Interface:[/cyan] {wifi_iface}\n"
+                    f"[cyan]Sharing:[/cyan] {share_method} via {internet_iface}",
+                    title="Hotspot Status"
+                ))
             else:
-                return password
-            retries += 1
-        return None
+                console.print("[red]✗ Failed to start hotspot[/red]")
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
 
 
-def firewall(config_file, action='status'):
+@hotspot.command('stop')
+@click.pass_context
+def hotspot_stop(ctx):
+    """Stop the hotspot"""
+    cli_obj = ctx.obj['cli']
+
+    if Confirm.ask("Stop the hotspot?"):
+        with console.status("[bold yellow]Stopping hotspot..."):
+            success = cli_obj.manager.stop_hotspot()
+
+        if success:
+            console.print("[green]✓ Hotspot stopped[/green]")
+        else:
+            console.print("[red]✗ Failed to stop hotspot[/red]")
+
+
+@hotspot.command('status')
+@click.pass_context
+def hotspot_status(ctx):
+    """Show hotspot status"""
+    cli_obj = ctx.obj['cli']
+
+    # Get running instances
+    running = cli_obj.manager.network_config.get_running_instances()
+
+    # Create status table
+    table = Table(title="Hotspot Status", show_header=True, header_style="bold magenta")
+    table.add_column("PID", style="cyan")
+    table.add_column("Interface", style="blue")
+    table.add_column("SSID", style="green")
+    table.add_column("Clients", style="yellow")
+
+    for instance in running:
+        table.add_row(
+            str(instance['pid']),
+            instance.get('viface', 'N/A'),
+            instance.get('ssid', 'N/A'),
+            str(instance.get('clients', 0))
+        )
+
+    console.print(table)
+
+    # Show interface info
+    console.print("\n[bold]Network Interfaces:[/bold]")
+    interfaces = cli_obj.manager.get_all_available_ifaces()
+    for iface in interfaces:
+        state_color = "green" if iface['state'] == 'UP' else "red"
+        console.print(f"  • {iface['name']} [{state_color}]{iface['state']}[/{state_color}] ({iface['type']})")
+
+
+@hotspot.command('interfaces')
+@click.pass_context
+def hotspot_interfaces(ctx):
+    """List all available interfaces"""
+    cli_obj = ctx.obj['cli']
+
+    interfaces = cli_obj.manager.get_all_available_ifaces()
+
+    table = Table(title="Available Interfaces", show_header=True)
+    table.add_column("Name", style="cyan")
+    table.add_column("State", style="green")
+    table.add_column("Type", style="yellow")
+    table.add_column("MAC", style="blue")
+    table.add_column("IP Address", style="magenta")
+
+    for iface in interfaces:
+        table.add_row(
+            iface['name'],
+            iface['state'],
+            iface['type'],
+            iface.get('mac', 'N/A'),
+            iface.get('ip', 'N/A')
+        )
+
+    console.print(table)
+
+# ==================== FIREWALL COMMANDS ====================
+
+
+@cli.group()
+def firewall():
+    """Firewall and captive portal management"""
+    pass
+
+
+@firewall.command('start')
+@click.option('--config-file', type=click.Path(exists=True),
+              help='Custom config file')
+@click.pass_context
+def firewall_start(ctx, config_file):
+    """Start firewall and captive portal"""
+    config_file = config_file or ctx.obj['config'] or '/etc/ap_manager/conf/config.json'
+
+    with console.status("[bold yellow]Starting firewall..."):
+        try:
+            config = BaseConfig(config_file=config_file)
+            captive = Captive(config)
+            success = captive.start()
+
+            if success:
+                console.print("[green]✓ Firewall and captive portal started[/green]")
+            else:
+                console.print("[red]✗ Failed to start firewall[/red]")
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+
+
+@firewall.command('stop')
+@click.option('--config-file', type=click.Path(exists=True),
+              help='Custom config file')
+@click.pass_context
+def firewall_stop(ctx, config_file):
+    """Stop firewall and captive portal"""
+    config_file = config_file or ctx.obj['config'] or '/etc/ap_manager/conf/config.json'
+
+    if Confirm.ask("Stop firewall and captive portal?"):
+        with console.status("[bold yellow]Stopping firewall..."):
+            try:
+                config = BaseConfig(config_file=config_file)
+                captive = Captive(config)
+                success = captive.stop()
+
+                if success:
+                    console.print("[green]✓ Firewall stopped[/green]")
+                else:
+                    console.print("[red]✗ Failed to stop firewall[/red]")
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+
+
+@firewall.command('status')
+@click.option('--config-file', type=click.Path(exists=True),
+              help='Custom config file')
+@click.pass_context
+def firewall_status(ctx, config_file):
+    """Show firewall status"""
+    config_file = config_file or ctx.obj['config'] or '/etc/ap_manager/conf/config.json'
+
     try:
         config = BaseConfig(config_file=config_file)
         captive = Captive(config)
-
-        action_map = {
-            'start': captive.start,
-            'stop': captive.stop,
-            'status': captive.status,
-            'check': captive.check,
-            'test': captive.test,
-            'debug': captive.debug,
-        }
-        return action_map[action]()
-    except KeyboardInterrupt:
-        sys.exit()
-
-def validate_arguments(args):
-    """Main validation function that uses the ArgumentValidator class."""
-    try:
-        manager = ApManager()
-        validator = ArgumentValidator(manager)
-
-        validator.validate(args)
-
-        config_update(args) if len(sys.argv[1:]) else ...
-
-        if args.action == 'start':
-            return manager._ap_init_()
-        elif args.action == 'stop':
-            return manager.stop_hotspot()
-        elif args.action == 'status':
-            manager.show_status()
-            running = manager.network_config.get_running_instances()
-            print(f"\n{fg.BWHITE}{fg.LWHITE}RUNNING INSTANCES{fg.RESET}")
-            print("PID\t\tInterface")
-            for instance in running:
-                print(f"{fg.CYAN}{instance['pid']}\t\t{fg.BBLUE}{instance['viface']}{fg.RESET}")
-        elif args.action == 'configure':
-            return manager.configure(args.ssid, args.password, args.interface, args.mode)
-        elif args.action == 'interfaces':
-            interfaces = manager.get_all_available_ifaces()
-            print("Available interfaces:")
-            for iface in interfaces:
-                print(f"  - {fg.DWHITE}{iface['name']} {fg.GREEN if iface['state'] == 'UP' else fg.RED}{iface['state']} {fg.YELLOW}{iface['type']}{fg.RESET}")
-
-        elif args.action in ('firewall_start', 'firewall_stop', 'firewall_status', 'firewall_check', 'firewall_test', 'firewall_debug'):
-            config_file = args.config or '/etc/ap_manager/conf/config.json'
-            action = args.action.split('_')[-1]
-            return firewall(config_file=config_file, action=action)
-
-        return manager
-    except KeyboardInterrupt:
-        sys.exit('\nQuit')
+        captive.status()
     except Exception as e:
-        sys.exit(e)
+        console.print(f"[red]Error: {e}[/red]")
+
+
+@firewall.command('debug')
+@click.option('--config-file', type=click.Path(exists=True),
+              help='Custom config file')
+@click.pass_context
+def firewall_debug(ctx, config_file):
+    """Debug firewall and captive portal"""
+    config_file = config_file or ctx.obj['config'] or '/etc/ap_manager/conf/config.json'
+
+    with console.status("[bold yellow]Running debug..."):
+        try:
+            config = BaseConfig(config_file=config_file)
+            captive = Captive(config)
+            captive.debug()
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+
+# ==================== CONFIG COMMANDS ====================
+
+
+@cli.group()
+def config():
+    """Configuration management"""
+    pass
+
+
+@config.command('show')
+@click.pass_context
+def config_show(ctx):
+    """Show current configuration"""
+    cli_obj = ctx.obj['cli']
+
+    if cli_obj.config_manager:
+        config_data = cli_obj.config_manager.get_config
+
+        console.print("[bold]Current Configuration:[/bold]")
+        for key, value in config_data.items():
+            if value:  # Skip empty values
+                console.print(f"  [cyan]{key}:[/cyan] {value}")
+    else:
+        console.print("[yellow]No configuration loaded[/yellow]")
+
+
+@config.command('set')
+@click.argument('key')
+@click.argument('value')
+@click.pass_context
+def config_set(ctx, key, value):
+    """Set a configuration value"""
+    cli_obj = ctx.obj['cli']
+
+    cli_obj.update_config(**{key: value})
+    console.print(f"[green]✓ Set {key} = {value}[/green]")
+
+
+@config.command('edit')
+@click.option('--editor', default=None, help='Editor to use')
+@click.pass_context
+def config_edit(ctx, editor):
+    """Edit configuration file with text editor"""
+    cli_obj = ctx.obj['cli']
+
+    if cli_obj.config_manager:
+        config_file = cli_obj.config_manager.config_file
+
+        # Use provided editor or default
+        editor = editor or os.environ.get('EDITOR', 'nano')
+
+        os.system(f"{editor} {config_file}")
+        console.print(f"[green]✓ Edited {config_file}[/green]")
+    else:
+        console.print("[red]No configuration file loaded[/red]")
+
+# ==================== INFO COMMANDS ====================
+
+
+@cli.command('version')
+def show_version():
+    """Show version information"""
+    console.print(Panel.fit(
+        f"[bold cyan]AP Manager[/bold cyan] v{version}\n"
+        "[yellow]Hotspot and Captive Portal Management[/yellow]",
+        title="Version"
+    ))
+
+
+@cli.command('info')
+@click.pass_context
+def system_info(ctx):
+    """Show system information"""
+    cli_obj = ctx.obj['cli']
+
+    info_table = Table(title="System Information", show_header=False)
+    info_table.add_column("Property", style="cyan")
+    info_table.add_column("Value", style="green")
+
+    # Add info rows
+    info_table.add_row("Version", version)
+    info_table.add_row("Python", sys.version.split()[0])
+    info_table.add_row("Hostapd", "Available" if cli_obj.manager.has_hostapd else "Not found")
+
+    # Interface count
+    interfaces = cli_obj.manager.get_all_available_ifaces()
+    wifi_count = sum(1 for i in interfaces if i['type'] == 'wireless')
+    wired_count = sum(1 for i in interfaces if i['type'] == 'ethernet')
+
+    info_table.add_row("WiFi Interfaces", str(wifi_count))
+    info_table.add_row("Wired Interfaces", str(wired_count))
+
+    console.print(info_table)
+
+# ==================== VALIDATION ====================
+
+
+def validate_inputs(wifi_iface, internet_iface, share_method):
+    """Validate command line inputs"""
+    cli = APManagerCLI()
+
+    # Check WiFi interface
+    if not cli.manager.is_wifi_interface(wifi_iface):
+        console.print(f"[red]ERROR: '{wifi_iface}' is not a WiFi interface[/red]")
+        return False
+
+    # Check AP support
+    if not cli.manager.can_be_ap(wifi_iface):
+        console.print("[red]ERROR: Your adapter does not support AP (master) mode[/red]")
+        return False
+
+    # Check internet interface for sharing
+    if share_method != "none" and not cli.manager.is_interface(internet_iface):
+        console.print(f"[red]ERROR: '{internet_iface}' is not an interface[/red]")
+        return False
+
+    return True
+
+# ==================== MAIN ====================
+
+
+def entry():
+    try:
+        cli()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Operation cancelled[/yellow]")
+        sys.exit(0)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        # if ctx.obj.get('verbose', False):
+        import traceback
+        console.print(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == '__main__':
-    # if os.geteuid() != 0:
-    # print("This script must be run as root")
-    # sys.exit(1)
-    main()
+    # Check for root privileges
+    if os.geteuid() != 0:
+        console.print("[bold red]This script must be run as root[/bold red]")
+        console.print("[yellow]Try: sudo ap_manager --help[/yellow]")
+        sys.exit(1)
+
+    # Run CLI
+    entry()
+
