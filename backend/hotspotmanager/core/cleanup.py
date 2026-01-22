@@ -277,7 +277,7 @@ class CleanupManager(SignalHandler):
     def _cleanup(self):
         """Internal cleanup function that performs all cleanup operations."""
         # Disable signal handling during cleanup
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        # signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
         signal.signal(signal.SIGUSR2, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -312,6 +312,10 @@ class CleanupManager(SignalHandler):
             self.clean_dhcp()
 
             self.clean_hostapd()
+
+            # Ctop ap_manager service
+            shared.stop_service('ap_manager')
+            shared.kill_service('hostapd')
 
             try:
                 # Clean interfaces

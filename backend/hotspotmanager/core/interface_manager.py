@@ -79,6 +79,101 @@ class InterfaceManager:
             # Unlock mutex
             self.lock.mutex_unlock()
 
+            self.setup_interface()
+
+            self.update_configuration()
+
+            netservice.configure()
+
+            # Create virtual interface
+            self.create_virtual_interface()
+
+            # Start services [hostapd, dnsmasq, dns, internet sharing]
+            # netservice.start()
+            self.save_iface_info(pid_file)
+
+            self.set_country()
+
+            return self.start_apmanager_service()
+        except Exception as e:
+            self.clean.die(f"AP Initialization failed: {str(e)}")
+
+    def start_apmanager_service(self) -> bool:
+        # Make interface unmanaged if needed
+        try:
+            self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
+        except Exception as e:
+            self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
+
+        finally:
+            try:
+                shared.kill_hostapd()
+                return shared.start_service('ap_manager')
+                """
+                shared.kill_hostapd()
+
+                running = False
+                retries = 0
+                while retries < 5:
+                    running = shared.restart_hostapd()
+                    if running:
+                        break
+                    retries += 1
+                    print(f"Retry {retries}/5\t", end="\r")
+                    time.sleep(1)
+                print("\n")
+                """
+
+                # netservice.start_hostapd()
+            except Exception as e:
+                print(f"Failed to start ap manager service {str(e)}")
+                return False
+
+    def set_country(self) -> bool:
+        # Set country code if needed
+        if self.config['country'] and self.ap_manager.use_iwconfig:
+            try:
+                subprocess.run(
+                    ['iw', 'reg', 'set', self.config['country']],
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to set country code: {str(e)}")
+                return False
+        return True
+
+    def save_iface_info(self, pid_file) -> bool:
+        # Lock mutex for writing interface information
+        self.lock.mutex_lock()
+        try:
+            iface_dir = os.path.join(self.conf_dir, pid_file.strip('.pid'))
+            os.makedirs(iface_dir, exist_ok=True)
+
+            wifi_iface_file = os.path.join(iface_dir, 'vwifi_iface')
+            with open(wifi_iface_file, 'w') as f:
+                f.write(self.config['vwifi_iface'])
+            os.chmod(wifi_iface_file, 0o444)
+            return True
+        except Exception:
+            return False
+        finally:
+            self.lock.mutex_unlock()
+
+    def update_configuration(self) -> bool:
+        # Update and save configuration
+        try:
+            self.ap_manager.config_manager._dict_update(
+                self.ap_manager.config_manager.get_config, self.config
+            )
+            self.ap_manager.config_manager.save_config()
+            return True
+        except Exception as e:
+            print(f"Failed to update configuration: {str(e)}")
+            return False
+
+    def setup_interface(self):
+        try:
+
             # Determine bridge interface
             if self.config['share_method'] == "bridge":
                 if self.is_bridge_interface(self.config['internet_iface']):
@@ -102,72 +197,8 @@ class InterfaceManager:
                         print("DONE")
                     except Exception as e:
                         self.clean.die(f"Failed to set interface as unmanaged: {str(e)}")
-
-            # Update and save configuration
-            try:
-                self.ap_manager.config_manager._dict_update(
-                    self.ap_manager.config_manager.get_config, self.config
-                )
-                self.ap_manager.config_manager.save_config()
-            except Exception as e:
-                self.clean.die(f"Failed to update configuration: {str(e)}")
-
-            netservice.configure()
-
-            # Create virtual interface
-            self.create_virtual_interface()
-
-            # Start services [hostapd, dnsmasq, dns, internet sharing]
-            # netservice.start()
-
-            # Lock mutex for writing interface information
-            self.lock.mutex_lock()
-            try:
-                iface_dir = os.path.join(self.conf_dir, pid_file.strip('.pid'))
-                os.makedirs(iface_dir, exist_ok=True)
-
-                wifi_iface_file = os.path.join(iface_dir, 'vwifi_iface')
-                with open(wifi_iface_file, 'w') as f:
-                    f.write(self.config['vwifi_iface'])
-                os.chmod(wifi_iface_file, 0o444)
-            finally:
-                self.lock.mutex_unlock()
-
-            # Set country code if needed
-            if self.config['country'] and self.ap_manager.use_iwconfig:
-                try:
-                    subprocess.run(
-                        ['iw', 'reg', 'set', self.config['country']],
-                        check=True
-                    )
-                except subprocess.CalledProcessError as e:
-                    self.clean.die(f"Failed to set country code: {str(e)}")
-
-            # Make interface unmanaged if needed
-            try:
-                self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
-
-                """
-                shared.kill_hostapd()
-
-                running = False
-                retries = 0
-                while retries < 5:
-                    running = shared.restart_hostapd()
-                    if running:
-                        break
-                    retries += 1
-                    print(f"Retry {retries}/5\t", end="\r")
-                    time.sleep(1)
-                print("\n")
-                """
-
-                netservice.start_hostapd()
-            except Exception as e:
-                self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
-
         except Exception as e:
-            self.clean.die(f"Initialization failed: {str(e)}")
+            self.clean.die(f"Failed setup interface: {str(e)}")
 
     def setup_frequency_and_channel(self):
         """Set correct frequency and channel for the WiFi interface"""

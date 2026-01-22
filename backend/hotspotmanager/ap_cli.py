@@ -14,17 +14,17 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt, Confirm
-from rich import print as rprint
-
+# from rich import print as rprint
 # Local imports
 from ap_manager import ApManager
 from ap_utils.config import ConfigManager
-from ap_utils.colors import fg
 from captive_portal.core.captive_entry import Captive
 from captive_portal.core.config import BaseConfig
+from captive_portal.monitoring.tui import interactive_cli
+from captive_portal.core.config import baseconfig as firewallconfig
 
 console = Console()
-version = "1.0.0"
+version = "1.0.2"
 
 # ==================== CLI Setup ====================
 
@@ -146,7 +146,7 @@ def hotspot_start(ctx, wifi_iface, internet_iface, ssid, password, channel,
 
         # Start hotspot
         try:
-            success = cli_obj.manager._ap_init_()
+            success = cli_obj.manager.setup_accesspoint()
             progress.update(task, completed=100)
 
             if success:
@@ -164,14 +164,15 @@ def hotspot_start(ctx, wifi_iface, internet_iface, ssid, password, channel,
 
 
 @hotspot.command('stop')
+@click.option('--force', '-f', is_flag=True, help='Force reply yes')
 @click.pass_context
-def hotspot_stop(ctx):
+def hotspot_stop(ctx, force):
     """Stop the hotspot"""
     cli_obj = ctx.obj['cli']
 
-    if Confirm.ask("Stop the hotspot?"):
+    if force or Confirm.ask("Stop the hotspot?"):
         with console.status("[bold yellow]Stopping hotspot..."):
-            success = cli_obj.manager.stop_hotspot()
+            success = cli_obj.manager.stop_accesspoint()
 
         if success:
             console.print("[green]✓ Hotspot stopped[/green]")
@@ -325,12 +326,65 @@ def firewall_debug(ctx, config_file):
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
 
+
+@firewall.group()
+def fconfig():
+    """Firewall (+captive) Configuration management"""
+    pass
+
+
+@fconfig.command('show')
+@click.pass_context
+def firewall_config_show(ctx):
+    """Show current configuration"""
+
+    if firewallconfig:
+        config_data = firewallconfig.get_config()
+
+        console.print("[bold]Current Firewall Configuration:[/bold]")
+        for key, value in config_data.items():
+            if value:  # Skip empty values
+                console.print(f"  [cyan]{key}:[/cyan] {value}")
+    else:
+        console.print("[yellow]No configuration loaded[/yellow]")
+
+
+@fconfig.command('set')
+@click.argument('key')
+@click.argument('value')
+@click.pass_context
+def firewall_config_set(ctx, key, value):
+    """Set a configuration value"""
+    new_conf = firewallconfig._dict_update_config({key: value})
+    firewallconfig.save_config()
+    firewallconfig.update_config(**new_conf)
+    console.print(f"[green]✓ Set {key} = {value}[/green]")
+
+
+@fconfig.command('edit')
+@click.option('--editor', default=None, help='Editor to use')
+@click.pass_context
+def firewall_config_edit(ctx, editor):
+    """Edit configuration file with text editor"""
+
+    if firewallconfig:
+        config_file = firewallconfig.config_file
+
+        # Use provided editor or default
+        editor = editor or os.environ.get('EDITOR', 'nano')
+
+        os.system(f"{editor} {config_file}")
+        console.print(f"[green]✓ Edited {config_file}[/green]")
+    else:
+        console.print("[red]No firewall configuration file loaded[/red]")
+
+
 # ==================== CONFIG COMMANDS ====================
 
 
 @cli.group()
 def config():
-    """Configuration management"""
+    """AP Configuration management"""
     pass
 
 
@@ -405,19 +459,43 @@ def system_info(ctx):
     info_table.add_column("Value", style="green")
 
     # Add info rows
+    info_table.add_row("Prop", "Value", style="bold")
+    info_table.add_section()
     info_table.add_row("Version", version)
     info_table.add_row("Python", sys.version.split()[0])
     info_table.add_row("Hostapd", "Available" if cli_obj.manager.has_hostapd else "Not found")
 
     # Interface count
     interfaces = cli_obj.manager.get_all_available_ifaces()
+
     wifi_count = sum(1 for i in interfaces if i['type'] == 'wireless')
     wired_count = sum(1 for i in interfaces if i['type'] == 'ethernet')
+    bridge_count = sum(1 for i in interfaces if i['type'] == 'bridge')
+    ap_count = sum(1 for i in interfaces if i['type'] == 'access point')
 
+    info_table.add_section()
+    info_table.add_row("Interface", "Count", style="bold")
+    info_table.add_section()
     info_table.add_row("WiFi Interfaces", str(wifi_count))
     info_table.add_row("Wired Interfaces", str(wired_count))
+    info_table.add_row("Bridge Interfaces", str(bridge_count))
+    info_table.add_row("AP Interfaces", str(ap_count))
 
     console.print(info_table)
+
+
+# ==================== MONITORING COMMANDS ====================
+
+@cli.group()
+def monitor():
+    """Monitor network and devices"""
+    pass
+
+
+@monitor.command('devices')
+@click.pass_context
+def device(ctx):
+    return interactive_cli()
 
 # ==================== VALIDATION ====================
 

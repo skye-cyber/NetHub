@@ -70,7 +70,34 @@ class Shared:
                 return True
             return False
         except Exception as e:
-            print(f"Error checking dnsmasq status: {str(e)}")
+            print(f"Error killing {service} status: {str(e)}")
+            return False
+
+    def start_service(self, service, restart=False) -> bool:
+        try:
+            cmd = ['sudo', 'systemctl', 'start', service] if not restart else ['sudo', 'systemctl', 'restart', service]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                print('ap_manager UP')
+                return True
+            return False
+        except Exception as e:
+            print(f"Error starting {service} status: {str(e)}")
+            return False
+
+    def stop_service(self, service, restart=False) -> bool:
+        try:
+            cmd = ['sudo', 'systemctl', 'stop', service]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                return True
+            return False
+        except Exception as e:
+            print(f"Error starting {service} status: {str(e)}")
             return False
 
     def kill_dnsmasq(self) -> bool:
@@ -90,17 +117,7 @@ class Shared:
         return os.path.exists(f"/sys/class/net/{iface}")
 
     def restart_hostapd(self) -> bool:
-        try:
-            # Restart
-            result = subprocess.run(['sudo', 'systemctl', 'restart', 'hostapd'],
-                                    capture_output=True, text=True)
-
-            if result.returncode == 0:
-                return True
-            return False
-        except Exception as e:
-            print(f"Error killing dnsmasq status: {str(e)}")
-            return False
+        return self.start_service(service='hostapd', restart=True)
 
     def get_hostapd_pid(self, pid_file=None):
         try:

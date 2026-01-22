@@ -16,10 +16,10 @@ class BaseConfig:
 
     def __init__(self, config_file: Optional[str] = None, **kwargs):
         self._initialize_paths()
+        self.config_file = config_file
 
         # Load configuration from file if provided
-        if config_file:
-            self.load_from_json(config_file)
+        self.config = self.load_from_json(config_file) if config_file else self.get_config()
 
         # Update with any additional kwargs
         if kwargs:
@@ -59,18 +59,34 @@ class BaseConfig:
             elif hasattr(BaseConfig, key):
                 setattr(BaseConfig, key, value)
 
-    def load_from_json(self, config_file: str) -> bool:
+    def _dict_update_config(self, new_config: dict) -> dict:
+        self.config.update(**new_config)
+        return self.config
+
+    def load_from_json(self, config_file: str = None) -> bool:
         """Load configuration from JSON file"""
+        if not config_file:
+            config_file = self.config_file
         try:
             with open(config_file, 'r') as f:
                 config_data = json.load(f)
                 self.update_config(**config_data)
-            return True
+            return config_data
         except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
             print(f"Error loading config from {config_file}: {e}")
             return False
 
-    def save_to_json(self, config_file: str) -> bool:
+    def save_config(self):
+        """Save configuration to file"""
+        if not self.config_file:
+            return False
+
+        with open(self.config_file, 'w') as f:
+            json.dump(self.config, f, indent=2)
+
+        return True
+
+    def dump_to_json(self, config_file: str) -> bool:
         """Save current configuration to JSON file"""
         try:
             config_data = self.get_config()

@@ -94,7 +94,7 @@ class ApManager:
         # Increase resource limits to prevent file descriptor issues
         increase_resource_limits()
 
-    def _ap_init_(self):
+    def setup_accesspoint(self):
         """Initialize the access point with proper configuration."""
         try:
             print()
@@ -190,12 +190,12 @@ class ApManager:
 
                 ifname = line.split(':')[1].strip()
                 ifype_map = {
-                    'eth' in ifname: "Ethernet",
-                    'wlan' in ifname: "Wifi",
-                    'br' in ifname: "Bridge",
-                    'ap' in ifname: "Access Point"
+                    'eth' in ifname: "ethernet",
+                    'wlan' in ifname: "wireless",
+                    'br' in ifname: "bridge",
+                    'ap' in ifname: "access point"
                 }
-                itype = 'Ethernet' if 'eth' in ifname else 'Wifi' if 'wlan' in ifname else 'Bridge' if 'br' in ifname else 'Access Point' if 'ap' in ifname else '-'
+                itype = 'ethernet' if 'eth' in ifname else 'wireless' if 'wlan' in ifname else 'bridge' if 'br' in ifname else 'access point' if 'ap' in ifname else '-'
 
                 wifi_ifaces.append({"name": ifname, "state": state, "type": itype})
             return wifi_ifaces
@@ -308,7 +308,7 @@ class ApManager:
             print(f"Error setting up systemd hotspot: {e}")
             return False
 
-    def start_hotspot(self):
+    def start_nmcli_hotspot(self):
         """Start the hotspot"""
         if not self.check_dependencies():
             return False
@@ -329,10 +329,7 @@ class ApManager:
             self.show_status()
         return success
 
-    def stop_hotspot(self):
-        """Stop the hotspot using appropriate network management tools."""
-        print(f"Stopping {self.config['vwifi_iface']}...")
-        return self.clean.clean_exit("Stopping ap manager...")
+    def stop_nmcli_hotspot(self):
 
         try:
             if self.config['mode'] == 'nmcli':
@@ -439,6 +436,11 @@ class ApManager:
             return (freq - 56160) // 2160
         else:
             return 0
+
+    def stop_accesspoint(self):
+        """Stop the hotspot using appropriate network management tools."""
+        print(f"Stopping {self.config['vwifi_iface']}...")
+        return self.clean.clean_exit("Stopping ap manager...")
 
     # Methods moved to InterfaceManager
     def is_5ghz_frequency(self, freq=None):
