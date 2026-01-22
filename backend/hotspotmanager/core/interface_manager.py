@@ -146,6 +146,8 @@ class InterfaceManager:
             # Make interface unmanaged if needed
             try:
                 self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
+
+                """
                 shared.kill_hostapd()
 
                 running = False
@@ -158,8 +160,9 @@ class InterfaceManager:
                     print(f"Retry {retries}/5\t", end="\r")
                     time.sleep(1)
                 print("\n")
+                """
 
-                # netservice.start_hostapd()
+                netservice.start_hostapd()
             except Exception as e:
                 self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
 

@@ -34,9 +34,10 @@
   "dhcp_hosts": [],
   "addn_hosts": [],
   "etc_hosts": [],
-  "daemon": false,
+  "daemon": true,
   "dns_logfile": "",
   "logfile": "",
+  "base_prog_dir": "/opt/ap_manager",
   "base_dir": "/etc/ap_manager",
   "pidfile": "/etc/ap_manager/proc/daemon.pid",
   "ip_addrs": [],
@@ -44,6 +45,6 @@
   "proc_dir": "/etc/ap_manager/proc",
   "hostapd_path": "/usr/sbin/hostapd",
   "hostapd_timestamps": false,
-  "hostapd_debug": 0,
+  "hostapd_debug": true,
   "redirect_to_localhost": false
 }

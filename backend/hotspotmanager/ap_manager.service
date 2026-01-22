@@ -3,14 +3,25 @@ Description=Create AP manager Service
 After=network.target
 
 [Service]
+# CRITICAL: hostapd forks with -B flag
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/ap_manager.sh start --config /etc/ap_manager/conf/config.json
-ExecStop=/usr/bin/ap_manager.sh stop
-KillSignal=SIGINT
+WorkingDirectory=/etc/ap_manager/conf
+ExecStart=/usr/sbin/hostapd -B -P /etc/ap_manager/hostapd.pid /etc/ap_manager/conf/hostapd.conf
+ExecStop=/usr/local/bin/ap_manager --action stop
+ExecStartPost=/bin/sleep 2
+# Reload sends SIGHUP
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=10
 Restart=on-failure
+# Don't restart too quickly
+StartLimitInterval=100
+StartLimitBurst=5
 RestartSec=5
 User=root
+SyslogIdentifier=hostapd
 
 [Install]
 WantedBy=multi-user.target

@@ -9,6 +9,7 @@ from ap_utils.config import config_manager
 from .netmanager import netmanager
 from .shared import shared
 import shutil
+from .hostapd_manager import hostapdmanager
 
 
 class NetServices:
@@ -412,6 +413,7 @@ class NetServices:
         return
 
     def start_hostapd(self):
+        return hostapdmanager.start()
         """Start hostapd with proper error handling and output buffering."""
         # Check if stdbuf is available for unbuffered output
         stdbuf_path = None
