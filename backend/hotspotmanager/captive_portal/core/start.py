@@ -13,7 +13,7 @@ class StartCaptive:
         self.log_file = Path('/etc/ap_manager/captive.log')
         self.dnsmasq_logfile = self.config.dnsmasq_logfile
         self.dnsmasq_config = self.config.dnsmasq_config
-        self.gateway_address = self.config.GATEWAY_ADDRESS
+        self.gateway_address = self.config.GATEWAY
         self.broadcast = self.config.get_broadcast_address()
         self.dhcp_range = self.config.get_dhcp_range()
         self.dnsmasq_leasefile = self.config.dnsmasq_leasefile
@@ -22,10 +22,11 @@ class StartCaptive:
         """Start the captive portal service"""
         print("Starting captive portal...")
         self.stop_services()
-        self.configure_interface()
+        # self.configure_interface() already setup by ip manager
         self.configure_dnsmasq()
         captivesetup.setup()
         firewall.update([])
+        self.start_services()
         self.test_config()
         return True
 
@@ -50,6 +51,10 @@ class StartCaptive:
             "server=8.8.8.8",
             "server=1.1.1.1",
 
+            # "server=8.8.4.4",
+            # "dhcp-option-force=option:mtu,1500",
+            # "no-hosts",
+
             # Logging
             "log-dhcp",
             "log-queries",
@@ -66,6 +71,7 @@ class StartCaptive:
         """Stop dnsmasq and Apache services"""
         subprocess.run(['service', 'dnsmasq', 'stop'], check=True)
         subprocess.run(['sudo', 'systemctl', 'stop', 'apache2'], check=True)
+        subprocess.run(['sudo', 'killall', 'dnsmasq'], check=False)
         return True
 
     def start_services(self) -> bool:
@@ -88,22 +94,25 @@ class StartCaptive:
         return True
 
     def test_config(self) -> bool:
-        """Test dnsmasq configuration"""
-        subprocess.run([
-            'sudo',
-            'dnsmasq',
-            '--test',
-            '-C',
-            str(self.dnsmasq_config)
-        ], check=True)
+        try:
+            """Test dnsmasq configuration"""
+            subprocess.run([
+                'sudo',
+                'dnsmasq',
+                '--test',
+                '-C',
+                str(self.dnsmasq_config)
+            ], check=True)
 
-        print("\t- Testing DNS redirect from gateway...")
-        subprocess.run([
-            'nslookup',
-            'google.com',
-            self.gateway_address
-        ], check=True)
-        return True
+            print("\t- Testing DNS redirect from gateway...")
+            subprocess.run([
+                'nslookup',
+                'google.com',
+                self.gateway_address
+            ], check=True)
+            return True
+        except Exception:
+            pass
 
 
 # Initialize startcaptive instance with shared config

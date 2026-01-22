@@ -5,6 +5,7 @@ from .firewall import firewall
 from .setup import captivesetup
 from typing import Dict, Any, Optional, List
 import subprocess
+from ap_utils.colors import fg
 
 
 class Captive:
@@ -44,14 +45,14 @@ class Captive:
         try:
             # Check if gateway is reachable
             result = subprocess.run([
-                'ping', '-c', '1', self.config.GATEWAY_ADDRESS
+                'ping', '-c', '1', self.config.GATEWAY
             ], capture_output=True, text=True)
 
             if result.returncode == 0:
-                print(f"Gateway {self.config.GATEWAY_ADDRESS} is reachable")
+                print(f"Gateway {self.config.GATEWAY} is reachable")
                 return True
             else:
-                print(f"Gateway {self.config.GATEWAY_ADDRESS} is not reachable")
+                print(f"Gateway {self.config.GATEWAY} is not reachable")
                 return False
         except Exception as e:
             print(f"Error checking connectivity: {e}")
@@ -63,7 +64,7 @@ class Captive:
         try:
             # Test DNS resolution
             subprocess.run([
-                'nslookup', 'google.com', self.config.GATEWAY_ADDRESS
+                'nslookup', 'google.com', self.config.GATEWAY
             ], check=True)
 
             # Test firewall rules
@@ -71,8 +72,8 @@ class Captive:
 
             print("Captive portal configuration test passed")
             return True
-        except Exception as e:
-            print(f"Configuration test failed: {e}")
+        except Exception:
+            print("Test failed")
             return False
 
     def debug(self) -> bool:
@@ -80,22 +81,26 @@ class Captive:
         print("Debugging captive portal...")
 
         # Show current configuration
-        print("\nCurrent Configuration:")
+        print(f"\n{fg.BLUE}Current Configuration:{fg.RESET}")
         for key, value in self.config.get_config().items():
             print(f"  {key}: {value}")
 
         # Show firewall status
-        print("\nFirewall Status:")
+        print(f"\n{fg.GREEN}Firewall Status:{fg.RESET}")
         self.firewall.verify_chains()
 
+        # Verbose debug
+        print(f"\n{fg.BWHITE}Verborse debug info:{fg.RESET}")
+        self.firewall.verify_chains_verbose()
+
         # Show authenticated devices
-        print("\nAuthenticated Devices:")
+        print(f"\n{fg.LBLUE}Authenticated Devices:{fg.RESET}")
         auth_devices = self._get_authenticated_devices()
         if auth_devices:
             for device in auth_devices:
                 print(f"  - {device}")
         else:
-            print("  No authenticated devices")
+            print(f"  {fg.FWHITE}No authenticated devices{fg.RESET}")
 
         return True
 

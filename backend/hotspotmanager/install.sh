@@ -27,6 +27,7 @@ mkdir -p "$BASE_DIR/conf"
 mkdir -p "$BASE_DIR/proc"
 
 # Copy files
+cp -r captive_portal "$INSTALL_DIR/"
 cp -r ap_utils "$INSTALL_DIR/"
 cp -r core "$INSTALL_DIR/"
 cp *.sh "$INSTALL_DIR/"

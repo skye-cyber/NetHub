@@ -8,9 +8,9 @@ class BaseConfig:
 
     # Shared configuration
     BASE_DIR = '/etc/ap_manager'
-    GATEWAY_ADDRESS = "192.168.100.1"
+    GATEWAY = "192.168.100.1"
     SUBNET = "192.168.100.0/24"
-    CAPTIVE_PORT = '8888'
+    CAPTIVE_PORT = '8001'
     CLIENT_INTERFACE = 'xap0'
     INTERNET_INTERFACE = 'eth0'
 
@@ -37,8 +37,8 @@ class BaseConfig:
         """Get all configuration as a dictionary"""
         return {
             'BASE_DIR': self.BASE_DIR,
-            'GATEWAY_ADDRESS': self.GATEWAY_ADDRESS,
-            'SUBNET': self.SUBNET,
+            'GATEWAY': self.GATEWAY,
+            'SUBNET': self.get_subnet(),
             'CAPTIVE_PORT': self.CAPTIVE_PORT,
             'CLIENT_INTERFACE': self.CLIENT_INTERFACE,
             'INTERNET_INTERFACE': self.INTERNET_INTERFACE,
@@ -52,6 +52,8 @@ class BaseConfig:
     def update_config(self, **kwargs):
         """Update configuration values"""
         for key, value in kwargs.items():
+            if key == 'vwifi_iface':
+                self.CLIENT_INTERFACE = value
             if hasattr(self, key):
                 setattr(self, key, value)
             elif hasattr(BaseConfig, key):
@@ -81,7 +83,12 @@ class BaseConfig:
 
     def get_broadcast_address(self) -> str:
         """Get broadcast address from gateway address"""
-        return f"{'.'.join(self.GATEWAY_ADDRESS.split('.')[:-1])}.255"
+        return f"{'.'.join(self.GATEWAY.split('.')[:-1])}.255"
+
+    def get_subnet(self) -> str:
+        subnet = f"{self.GATEWAY.rsplit('.', 1)[0]}.0/24"
+        self.SUBNET = subnet
+        return subnet
 
     def get_dhcp_range(self) -> str:
         """Get DHCP range configuration"""
@@ -93,3 +100,9 @@ class BaseConfig:
         config = cls()
         config.update_config(**config_dict)
         return config
+
+
+# Path(__file__).resolve().parent.parent / 'config/captive.json'
+
+conf_file = Path('/etc/ap_manager/conf/captive.json')
+baseconfig = BaseConfig(conf_file)

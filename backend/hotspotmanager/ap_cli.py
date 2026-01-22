@@ -4,24 +4,29 @@ import sys
 import re
 import os
 from ap_manager import ApManager
-from ap_utils.config import config_manager, ConfigManager
+from ap_utils.config import ConfigManager
 import getpass
 from typing import Union
 from ap_utils.colors import fg
+from captive_portal.core.captive_entry import Captive
+from captive_portal.core.config import BaseConfig
 
 version = "1.0.0"
 
 
 def config_update(args):
     try:
+        from ap_utils.config import config_manager
         args_dict = args.__dict__
+
         # Update Configuration
         if args.config and os.path.exists(args.config):
             config_manager = ConfigManager(args.config)
 
         # Update main conf
-        # config_manager._dict_update(config_manager.get_config, args_dict)
-        # config_manager.save_config()
+        config_manager._dict_update(config_manager.get_config, args_dict)
+
+        config_manager.save_config()
 
         # Update hostapd conf
         hostman = ConfigManager(config_manager.__bconfdir__ / 'hostapd.json')
@@ -36,16 +41,18 @@ def config_update(args):
         return True
     except KeyboardInterrupt:
         pass
-    except Exception:
+    except Exception as e:
+        print(e)
         return False
 
 
 def main():
     parser = argparse.ArgumentParser(description='Custom AP Manager')
-    parser.add_argument('--action', default='start', choices=['start', 'stop', 'status', 'configure', 'interfaces'], help='Action to perform')
+    parser.add_argument('--action', default='start', choices=['start', 'stop', 'status', 'configure', 'interfaces', 'firewall_start', 'firewall_stop', 'firewall_status', 'firewall_check', 'firewall_test', 'firewall_debug'], help='Action to perform')
     parser.add_argument('--wifi_iface', default='wlan0', type=str, help='Wifi interface to use.')
-    parser.add_argument('--internet_iface', default="eth0", type=str, help='Internetfacing internet to use')
+    parser.add_argument('--internet_iface', default="wlan0", type=str, help='Internetfacing internet to use')
     parser.add_argument('--bridge_iface', default="xbr0", type=str, help='Bridge interface if using bridge sharing.')
+    parser.add_argument("--gateway", type=str, help="IPv4 Gateway for the Access Point (default: 192.168.100.1)")
     parser.add_argument('--ssid', help='SSID for the hotspot')
     parser.add_argument('--password', help='Password for the hotspot')
     parser.add_argument('--interface', help='Wireless interface to use')
@@ -70,7 +77,7 @@ def main():
     parser.add_argument("--ht_capab", help="HT capabilities (default: [HT40+])")
     parser.add_argument("--vht_capab", help="VHT capabilities")
     parser.add_argument("--country", help="Set two-letter country code for regularity (example: US)")
-    parser.add_argument("--freq-band", default=5, type=Union[int, float], help="Set frequency band. Valid inputs: 2.4, 5 (default: Use 5GHz if the interface supports it)")
+    parser.add_argument("--freq-band", default=2.4, type=Union[int, float], help="Set frequency band. Valid inputs: 2.4, 5 (default: Use 5GHz if the interface supports it)")
     parser.add_argument("--driver", help="Choose your WiFi adapter driver (default: nl80211)")
     parser.add_argument("--no-virt", action='store_true', help="Do not create virtual interface")
     parser.add_argument("--no-haveged", action='store_true', help="Do not run 'haveged' automatically when needed")
@@ -93,7 +100,6 @@ def main():
     # parser.add_argument("Non-Bridging Options:")
     parser.add_argument("--no-dns", action='store_true', help="Disable dnsmasq DNS server")
     parser.add_argument("--no-dnsmasq", action='store_true', help="Disable dnsmasq server completely")
-    parser.add_argument("--gateway", type=str, help="IPv4 Gateway for the Access Point (default: 192.168.100.1)")
     parser.add_argument("-d", action='store_true', help="DNS server will take into account /etc/hosts")
     parser.add_argument("-e", action='store_true', help="DNS server will take into account additional hosts file")
     parser.add_argument("-c", "--config", help="Config file with default values.")
@@ -265,6 +271,23 @@ class ArgumentValidator:
         return None
 
 
+def firewall(config_file, action='status'):
+    try:
+        config = BaseConfig(config_file=config_file)
+        captive = Captive(config)
+
+        action_map = {
+            'start': captive.start,
+            'stop': captive.stop,
+            'status': captive.status,
+            'check': captive.check,
+            'test': captive.test,
+            'debug': captive.debug,
+        }
+        return action_map[action]()
+    except KeyboardInterrupt:
+        sys.exit()
+
 def validate_arguments(args):
     """Main validation function that uses the ArgumentValidator class."""
     try:
@@ -273,7 +296,7 @@ def validate_arguments(args):
 
         validator.validate(args)
 
-        config_update(args)
+        config_update(args) if len(sys.argv[1:]) else ...
 
         if args.action == 'start':
             return manager._ap_init_()
@@ -293,6 +316,12 @@ def validate_arguments(args):
             print("Available interfaces:")
             for iface in interfaces:
                 print(f"  - {fg.DWHITE}{iface['name']} {fg.GREEN if iface['state'] == 'UP' else fg.RED}{iface['state']} {fg.YELLOW}{iface['type']}{fg.RESET}")
+
+        elif args.action in ('firewall_start', 'firewall_stop', 'firewall_status', 'firewall_check', 'firewall_test', 'firewall_debug'):
+            config_file = args.config or '/etc/ap_manager/conf/config.json'
+            action = args.action.split('_')[-1]
+            return firewall(config_file=config_file, action=action)
+
         return manager
     except KeyboardInterrupt:
         sys.exit('\nQuit')

@@ -3,10 +3,11 @@ import functools
 import traceback
 from typing import Callable, Any, Optional, Type, List, Dict
 from enum import Enum, auto
+from ap_utils.colors import fg
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('ErrorHandler')
+logger = logging.getLogger('EH')
 
 
 class ErrorSeverity(Enum):
@@ -44,13 +45,13 @@ class ErrorHandler:
         self.error_count += 1
 
         if severity == ErrorSeverity.CRITICAL:
-            logger.critical(f"{self.name}: Critical error - {error_info['message']}")
+            logger.critical(f"{fg.BWHITE}{self.name}{fg.RESET}: {fg.RED}{error_info['message']}{fg.RESET}")
         elif severity == ErrorSeverity.ERROR:
-            logger.error(f"{self.name}: Error - {error_info['message']}")
+            logger.error(f"{fg.BWHITE}{self.name}{fg.RESET}: {fg.RED}{error_info['message']}{fg.RESET}")
         elif severity == ErrorSeverity.WARNING:
-            logger.warning(f"{self.name}: Warning - {error_info['message']}")
+            logger.warning(f"{fg.BWHITE}{self.name}{fg.RESET}: {fg.YELLOW}{error_info['message']}{fg.RESET}")
         else:
-            logger.info(f"{self.name}: Info - {error_info['message']}")
+            logger.info(f"{fg.BWHITE}{self.name}{fg.RESET}: {fg.BLUE}{error_info['message']}{fg.RESET}")
 
         if self.error_count > self.max_errors:
             logger.critical(f"{self.name}: Maximum error count ({self.max_errors}) reached. Stopping.")
@@ -96,14 +97,14 @@ class ErrorHandler:
 
         raise Exception(f"All retry attempts failed for {func.__name__}")
 
-    def error_handler_decorator(self, func: Callable) -> Callable:
+    def decorator(self, func: Callable) -> Callable:
         """Decorator for error handling with retry logic"""
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             return self.handle_error(func, *args, **kwargs)
         return wrapper
 
-    def error_handler_decorator_with_args(self, *decorator_args, **decorator_kwargs) -> Callable:
+    def decorator_with_args(self, *decorator_args, **decorator_kwargs) -> Callable:
         """Decorator factory that accepts arguments"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -114,15 +115,17 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_context(self, func: Callable, *args, **kwargs) -> Any:
+    def context(self, func: Callable, *args, **kwargs) -> Any:
         """Context manager for error handling"""
+        log_error = self.log_error
+
         class ErrorHandlerContext:
             def __enter__(self):
                 return self
 
             def __exit__(self, exc_type, exc_val, exc_tb):
                 if exc_type is not None:
-                    self.handler.log_error(exc_val, context={
+                    log_error(exc_val, context={
                         'function': func.__name__,
                         'args': args,
                         'kwargs': kwargs
@@ -130,17 +133,17 @@ class ErrorHandler:
                     return True  # Suppress the exception
         return ErrorHandlerContext()
 
-    def error_handler_context_factory(self, *context_args, **context_kwargs) -> Callable:
+    def context_factory(self, *context_args, **context_kwargs) -> Callable:
         """Context manager factory that accepts arguments"""
         def context_manager(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                with self.error_handler_context(func, *args, **kwargs) as ctx:
+                with self.context(func, *args, **kwargs) as ctx:
                     return func(*args, **kwargs)
             return wrapper
         return context_manager
 
-    def error_handler_exception(self, exception_type: Type[Exception]) -> Callable:
+    def exception(self, exception_type: Type[Exception]) -> Callable:
         """Decorator that handles specific exception types"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -157,7 +160,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_exception_factory(self, *exception_types: Type[Exception]) -> Callable:
+    def exception_factory(self, *exception_types: Type[Exception]) -> Callable:
         """Decorator factory that handles multiple exception types"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -174,7 +177,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_fallback(self, fallback_func: Callable) -> Callable:
+    def with_fallback(self, fallback_func: Callable) -> Callable:
         """Decorator that provides a fallback function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -191,7 +194,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_fallback_factory(self, fallback_func: Callable) -> Callable:
+    def with_fallback_factory(self, fallback_func: Callable) -> Callable:
         """Decorator factory that provides a fallback function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -208,7 +211,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_recovery(self, recovery_func: Callable) -> Callable:
+    def with_recovery(self, recovery_func: Callable) -> Callable:
         """Decorator that provides a recovery function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -226,7 +229,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_recovery_factory(self, recovery_func: Callable) -> Callable:
+    def with_recovery_factory(self, recovery_func: Callable) -> Callable:
         """Decorator factory that provides a recovery function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -244,7 +247,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_cleanup(self, cleanup_func: Callable) -> Callable:
+    def with_cleanup(self, cleanup_func: Callable) -> Callable:
         """Decorator that provides a cleanup function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -262,7 +265,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_cleanup_factory(self, cleanup_func: Callable) -> Callable:
+    def with_cleanup_factory(self, cleanup_func: Callable) -> Callable:
         """Decorator factory that provides a cleanup function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -280,7 +283,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_rollback(self, rollback_func: Callable) -> Callable:
+    def with_rollback(self, rollback_func: Callable) -> Callable:
         """Decorator that provides a rollback function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -299,7 +302,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_rollback_factory(self, rollback_func: Callable) -> Callable:
+    def with_rollback_factory(self, rollback_func: Callable) -> Callable:
         """Decorator factory that provides a rollback function if the main function fails"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -318,7 +321,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_transaction(self, commit_func: Callable, rollback_func: Callable) -> Callable:
+    def with_transaction(self, commit_func: Callable, rollback_func: Callable) -> Callable:
         """Decorator that provides transactional behavior"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -338,7 +341,7 @@ class ErrorHandler:
             return wrapper
         return decorator
 
-    def error_handler_with_transaction_factory(self, commit_func: Callable, rollback_func: Callable) -> Callable:
+    def with_transaction_factory(self, commit_func: Callable, rollback_func: Callable) -> Callable:
         """Decorator factory that provides transactional behavior"""
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
@@ -417,7 +420,7 @@ def rollback_network():
 # Using the decorators
 
 
-@error_handler.error_handler_decorator
+@error_handler.decorator
 def setup_system():
     """Main system setup function"""
     if not setup_network():
@@ -432,10 +435,10 @@ def setup_system():
 
 def setup_system_with_context():
     """Main system setup function with context manager"""
-    with error_handler.error_handler_context(setup_network):
+    with error_handler.context(setup_network):
         setup_network()
 
-    with error_handler.error_handler_context(setup_firewall):
+    with error_handler.context(setup_firewall):
         setup_firewall()
 
     print("System setup complete")
@@ -444,7 +447,7 @@ def setup_system_with_context():
 # Using the fallback decorator
 
 
-@error_handler.error_handler_with_fallback(lambda: print("Using fallback network setup"))
+@error_handler.with_fallback(lambda: print("Using fallback network setup"))
 def setup_system_with_fallback():
     """Main system setup function with fallback"""
     setup_network()
@@ -455,7 +458,7 @@ def setup_system_with_fallback():
 # Using the recovery decorator
 
 
-@error_handler.error_handler_with_recovery(cleanup_network)
+@error_handler.with_recovery(cleanup_network)
 def setup_system_with_recovery():
     """Main system setup function with recovery"""
     setup_network()
@@ -466,7 +469,7 @@ def setup_system_with_recovery():
 # Using the rollback decorator
 
 
-@error_handler.error_handler_with_rollback(rollback_network)
+@error_handler.with_rollback(rollback_network)
 def setup_system_with_rollback():
     """Main system setup function with rollback"""
     setup_network()
@@ -477,7 +480,7 @@ def setup_system_with_rollback():
 # Using the transaction decorator
 
 
-@error_handler.error_handler_with_transaction(
+@error_handler.with_transaction(
     commit_func=lambda: print("Committing changes"),
     rollback_func=rollback_network
 )
@@ -508,7 +511,7 @@ def setup_system_with_direct_handler():
 # Example of using the exception-specific decorator
 
 
-@error_handler.error_handler_exception(ConnectionError)
+@error_handler.exception(ConnectionError)
 def setup_system_with_exception_handler():
     """Main system setup function with exception-specific handler"""
     setup_network()
@@ -519,7 +522,7 @@ def setup_system_with_exception_handler():
 # Example of using the multiple exception types decorator
 
 
-@error_handler.error_handler_exception_factory(ConnectionError, TimeoutError)
+@error_handler.exception_factory(ConnectionError, TimeoutError)
 def setup_system_with_multiple_exception_handler():
     """Main system setup function with multiple exception types handler"""
     setup_network()

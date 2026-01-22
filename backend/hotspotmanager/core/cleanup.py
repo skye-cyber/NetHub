@@ -6,6 +6,7 @@ import shutil
 from typing import Optional
 from .signals import SignalHandler
 from ap_utils.colors import fg
+from .shared import shared
 
 
 class CleanupManager(SignalHandler):
@@ -213,6 +214,25 @@ class CleanupManager(SignalHandler):
             except Exception:
                 pass
 
+    def clean_hostapd(self) -> bool:
+        pid_file = os.path.join(self.proc_dir, 'hostapd.pid')
+
+        if self.config.get('daemon', False) and self.config['pidfile']:
+            pid_file = self.config['pidfile']
+
+        if not pid_file or not os.path.exists(pid_file):
+            return False
+
+        hostapd_pid = shared.get_hostapd_pid(pid_file)
+
+        if hostapd_pid:
+            try:
+                os.kill(hostapd_pid)
+                return True
+            except Exception:
+                return False
+        return False
+
     def clean_interfaces(self):
         # Cleanup virtual interface if not disabled
         if not self.no_virt and self.vwifi_iface and self.ap_man.interface_manager.interface_exists(self.vwifi_iface):
@@ -290,6 +310,9 @@ class CleanupManager(SignalHandler):
             self.clean_dns()
 
             self.clean_dhcp()
+
+            self.clean_hostapd()
+
             try:
                 # Clean interfaces
                 self.clean_interfaces()

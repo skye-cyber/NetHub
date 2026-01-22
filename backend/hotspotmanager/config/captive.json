@@ -1,0 +1,12 @@
+{
+"GATEWAY": "192.168.100.1",
+"CLIENT_INTERFACE": "xap0",
+"CAPTIVE_PORT":"8001",
+"INTERNET_INTERFACE":"eth0",
+"BASE_DIR":"/etc/ap_manager",
+"AUTH_DIR":"/etc/ap_manager/auth",
+"MAC_FILE":"/etc/ap_manager/auth/authenticated_macs",
+"DNSMASQ_CONFIG":"/etc/dnsmasq.d/ap_manager_portal.conf",
+"DNSMASQ_LOGFILE":"/etc/ap_manager/dnsmasq.log",
+"DNSMASQ_LEASEFILE":"/var/lib/misc/dnsmasq.leases"
+}

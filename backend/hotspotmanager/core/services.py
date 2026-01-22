@@ -33,9 +33,9 @@ class NetServices:
             self.configure_dnsmasq()
 
     def start(self):
-        ...
-        # self.enable_internet_sharing()
-        # self.start_dhcp_dns()
+        self.enable_internet_sharing()
+        self.start_dhcp_dns()
+        # self.start_hostapd()
 
     def get_dhcp_range(self) -> str:
         """Get DHCP range configuration"""
@@ -53,11 +53,11 @@ class NetServices:
                 f"driver={self.config['driver']}",
                 f"ctrl_interface={os.path.join(self.conf_dir, 'hostapd_ctrl')}",
                 "ctrl_interface_group=0",
-                "max_num_sta=25",
+                "max_num_sta=100",
                 f"ht_capab={self.config['ht_capab']}",  # [HT40][SHORT-GI-20][DSSS_CCK-40]",
                 "auth_algs=1",
                 f"ap_isolate={int(self.config.get('isolate_clients', False))}",
-                f"ignore_broadcast_ssid={False}",
+                "ignore_broadcast_ssid=0",
                 "beacon_int=100\n",
             ]
 
@@ -376,6 +376,7 @@ class NetServices:
                 if shared.is_dnsmasq_running():
                     shared.kill_dnsmasq()
 
+                print("Starting dnsmasq ..")
                 result = subprocess.run([
                     'dnsmasq',
                     '-C', os.path.join(self.conf_dir, 'dnsmasq.conf'),
@@ -383,6 +384,10 @@ class NetServices:
                     '-l', os.path.join(self.conf_dir, 'dnsmasq.leases'),
                     '-p', str(self.config.get('dns_port', 5353))
                 ], check=True)
+                if result.returncode == 0:
+                    print("DNSMAQ started OK")
+                else:
+                    print("Failed to start dnsmasq:", result.stderr or result.stdout)
             except Exception as e:
                 print(e)
             finally:
@@ -405,6 +410,101 @@ class NetServices:
                 pid = f.read()
             return pid
         return
+
+    def start_hostapd(self):
+        """Start hostapd with proper error handling and output buffering."""
+        # Check if stdbuf is available for unbuffered output
+        stdbuf_path = None
+        try:
+            result = subprocess.run(['which', 'stdbuf'],
+                                    capture_output=True, text=True,
+                                    check=True)
+            stdbuf_path = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            stdbuf_path = None
+
+        # Check if hostapd is already running
+        if shared.is_hostapd_running():
+            print("Hostapd is already running")
+            # return True
+
+        # Check if the interface is already configured
+        if shared.is_interface_configured(self.config['vwifi_iface']):
+            print("Interface is already configured, restarting hostapd")
+            if not self.restart_hostapd():
+                return False
+
+        # Build the hostapd command
+        hostapd_cmd = []
+        if stdbuf_path:
+            hostapd_cmd.extend([stdbuf_path, '-oL'])
+
+        hostapd_cmd.extend([
+            self.config['hostapd_path'],
+            *self.config.get('hostapd_debug_args', []),
+            os.path.join(self.conf_dir, 'hostapd.conf')
+        ])
+        debug_map = {
+            1: '-d',
+            2: '-dd',
+        }
+        debug_level = self.config.get('hostapd_debug', None)
+
+        pid_file = os.path.join(self.proc_dir, 'hostapd.pid')
+
+        if self.config.get('daemon', False):
+            hostapd_cmd.append('-B')
+            if self.config['pidfile']:
+                pid_file = self.config['pidfile']
+                # Create the file
+                with open(self.config['pidfile'], 'w') as f:
+                    f.write('')
+                hostapd_cmd.extend(['-P', pid_file])
+
+        if debug_level and debug_level > 0:
+            hostapd_cmd.append(debug_map[debug_level])
+
+        hostapd_cmd.extend(['&' 'disown', '&']) if self.config.get('daemon', False) else None
+
+        # print("HOSTAPD cmd:", hostapd_cmd)
+        # Start hostapd in the background
+        try:
+            # Use Popen to start the process
+            self.hostapd_process = subprocess.run(
+                hostapd_cmd,
+                # stdout=subprocess.PIPE,
+                # stderr=subprocess.PIPE,
+                start_new_session=True,
+                text=True
+            )
+
+            # Save the PID
+            self.hostapd_pid = shared.get_hostapd_pid(pid_file)
+
+            print(f"HOSTAPD PID:{fg.CYAN}{self.hostapd_pid}{fg.RESET}")
+
+            # Wait a moment to check if hostapd started successfully
+            # Check if the process is still running
+            """
+            if self.hostapd_process.stdout is not None:
+                # Process has terminated, read error output
+                stderr_output = self.hostapd_process.stderr
+                stdout_output = self.hostapd_process.stdout
+                error_msg = stderr_output or stdout_output
+
+                print(f"Error: {fg.FRED}{error_msg}{fg.RESET}")
+
+                print(f"{fg.RED}Hostapd failed to start{fg.RESET}")
+                return False
+
+            """
+            # Success - hostapd is running in background
+            print(f"{fg.GREEN}Hostapd started successfully{fg.RESET}")
+            return True
+
+        except Exception as e:
+            print(f"Error starting hostapd: {str(e)}")
+            return False
 
     def start_dhcp_dns(self):
         """Start DHCP and DNS services with proper error handling."""

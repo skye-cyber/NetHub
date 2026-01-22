@@ -7,7 +7,7 @@ def increase_resource_limits():
         if soft_limit < 4096:
             new_limit = min(hard_limit, 4096) if hard_limit > 0 else 4096
             resource.setrlimit(resource.RLIMIT_NOFILE, (new_limit, hard_limit))
-            print(f"Increased file descriptor limit to {new_limit}")
+            # print(f"Increased file descriptor limit to {new_limit}")
 
         # Increase process limit
         soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NPROC)

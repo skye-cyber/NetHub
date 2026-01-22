@@ -97,6 +97,7 @@ class ApManager:
     def _ap_init_(self):
         """Initialize the access point with proper configuration."""
         try:
+            print()
             # Use the new interface manager to initialize the access point
             self.interface_manager.initialize_access_point()
 

@@ -91,7 +91,7 @@ class InterfaceManager:
 
             # Create virtual interface if needed
             if self.config['no_virt']:
-                self.config['vwifi_iface'] = self.alloc_new_iface('xap')
+                self.config['vwifi_iface'] = self.config['vwifi_iface'] or self.alloc_new_iface('xap')
 
                 # Set virtual interface as unmanaged in NetworkManager if possible
                 if (self.netmanager.networkmanager_is_running()
@@ -118,7 +118,7 @@ class InterfaceManager:
             self.create_virtual_interface()
 
             # Start services [hostapd, dnsmasq, dns, internet sharing]
-            netservice.start()
+            # netservice.start()
 
             # Lock mutex for writing interface information
             self.lock.mutex_lock()
@@ -146,7 +146,20 @@ class InterfaceManager:
             # Make interface unmanaged if needed
             try:
                 self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
-                shared.restart_hostapd()
+                shared.kill_hostapd()
+
+                running = False
+                retries = 0
+                while retries < 5:
+                    running = shared.restart_hostapd()
+                    if running:
+                        break
+                    retries += 1
+                    print(f"Retry {retries}/5\t", end="\r")
+                    time.sleep(1)
+                print("\n")
+
+                # netservice.start_hostapd()
             except Exception as e:
                 self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
 
@@ -203,7 +216,7 @@ class InterfaceManager:
             print(f"\n{fg.YELLOW}Hostapd{fg.RESET} already configured!")
 
             print(f"\n{fg.LWHITE}{fg.DWHITE}Interface\tStatus{fg.RESET}")
-            print(f"{fg.BLUE}{self.config['vwifi_iface']}\t\t{fg.BGREEN}Ready{fg.RESET}\n")
+            print(f"\n{fg.BLUE}{self.config['vwifi_iface']}\t\t{fg.BGREEN}Ready{fg.RESET}\n")
 
             # Wait for NetworkManager to recognize the interface if needed
             if (self.netmanager.networkmanager_is_running()
@@ -217,12 +230,13 @@ class InterfaceManager:
             # If no new MAC specified or it's already in use, generate a new one
             if not new_mac or new_mac in all_macs:
                 new_mac = self.get_new_mac_address(self.config['vwifi_iface'])
+                print(f"Generated ne mac: {fg.MAGENTA}{new_mac}{fg.RESET}")
                 if not new_mac:
                     self.clean.die("Failed to generate new MAC address")
                 self.config['mac'] = new_mac
 
             # Update configuration with new interface and MAC
-            self.config['vwifi_iface'] = self.config['vwifi_iface']
+            # self.config['vwifi_iface'] = self.config['vwifi_iface']
 
         except Exception as e:
             self.clean.die(f"{fg.RED}Error during virtual interface creation: "
@@ -250,15 +264,6 @@ class InterfaceManager:
         print(f"Initialize wifi: {fg.YELLOW}{self.config['vwifi_iface']}{fg.RESET} on {fg.BWHITE}{self.config['internet_iface']}{fg.RESET}")
 
         try:
-            # Set MAC address if virtualization is enabled and MAC is specified
-            if not self.config.get('no_virt', False) and self.config.get('mac'):
-                self.netmanager.wifi_switch(state='off')
-                command.run([
-                    'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
-                    'address', self.config['mac']
-                ], check=True)
-                self.netmanager.wifi_switch(state='on')
-
             print('Flush addresses')
             # Bring interface down and flush addresses
             command.run([
@@ -269,12 +274,90 @@ class InterfaceManager:
                 'ip', 'addr', 'flush', self.config['vwifi_iface']
             ], check=True)
 
+            # Set MAC address if virtualization is enabled and MAC is specified
+            if self.config.get('mac') and 0 > 1:
+                self.netmanager.wifi_switch(state='off')
+                command.run([
+                    'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
+                    'address', self.config['mac']
+                ], check=True)
+                self.netmanager.wifi_switch(state='on')
+
+            # Configure interface
+            print(f'Configure interface for {self.config['share_method']} sharing method')
+            if self.config.get('share_method', 'none') != 'bridge':
+                # Bring interface up
+                def bring_interface_up():
+                    self.netmanager.wifi_switch(state='off')
+                    self.netmanager.rfkill_off()
+                    result = command.run([
+                        'ip', 'link', 'set', 'up', 'dev', self.config['vwifi_iface']
+                    ], check=True, force_return=True)
+                    self.netmanager.wifi_switch(state='off')
+                    return result
+
+                result = bring_interface_up()
+                if not result or isinstance(result, dict) and result['status'] == 'error':
+                    command.run(['sudo', 'rfkill', 'unblock', 'all'], check=True)
+                    bring_interface_up()
+
+                # **FIXED**: Use a different IP for the AP interface
+                # Extract network from gateway, use .1 for AP interface
+                gateway = self.config['gateway']
+                gateway_parts = gateway.split('.')
+                ap_ip = f"{gateway_parts[0]}.{gateway_parts[1]}.{gateway_parts[2]}.1"
+                broadcast = f"{gateway_parts[0]}.{gateway_parts[1]}.{gateway_parts[2]}.255"
+
+                print(f" - Set AP IP address: {ap_ip}/24 (broadcast: {broadcast})\n")
+                print(f" - Gateway for clients will be: {gateway}\n")
+
+                command.run([
+                    'ip', 'addr', 'add', f"{ap_ip}/24",
+                    'broadcast', broadcast,
+                    'dev', self.config['vwifi_iface']
+                ], check=True)
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Failed to initialize WiFi interface: {str(e)}"
+            if hasattr(self, 'virt_diems'):
+                error_msg += f"\n{self.virt_diems}"
+            self.clean.die(error_msg)
+
+    def x__initialize_wifi_interface(self):
+        """Initialize the WiFi interface with proper configuration"""
+        print(f"Initialize wifi: {fg.YELLOW}{self.config['vwifi_iface']}{fg.RESET} on {fg.BWHITE}{self.config['internet_iface']}{fg.RESET}")
+
+        try:
+            print('Flush addresses')
+            # Bring interface down and flush addresses
+            command.run([
+                'ip', 'link', 'set', 'down', 'dev', self.config['vwifi_iface']
+            ], check=True)
+
+            command.run([
+                'ip', 'addr', 'flush', self.config['vwifi_iface']
+            ], check=True)
+
+            # Set MAC address if virtualization is enabled and MAC is specified
+            # if not self.config.get('no_virt', False) and
+            if self.config.get('mac'):
+                self.netmanager.wifi_switch(state='off')
+                command.run([
+                    'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
+                    'address', self.config['mac']
+                ], check=True)
+                self.netmanager.wifi_switch(state='on')
+
             # Set MAC address if virtualization is disabled and MAC is specified
+            """
             if self.config.get('no_virt', False) and self.config.get('mac'):
                 command.run([
                     'ip', 'link', 'set', 'dev', self.config['vwifi_iface'],
                     'address', self.config['mac']
                 ], check=True)
+            """
 
             # Configure interface for non-bridge sharing method
             print('Configure interface for non-bridge sharing method')
@@ -295,10 +378,11 @@ class InterfaceManager:
                 # Set IP address and broadcast
                 print(" - Set IP address and broadcast\n")
                 gateway = self.config['gateway']
+                ip_range = self.config['ip_range']
                 broadcast = f"{'.'.join(gateway.split('.')[:3])}.255"
 
                 command.run([
-                    'ip', 'addr', 'add', f"{gateway}/24",
+                    'ip', 'addr', 'add', ip_range,
                     'broadcast', broadcast,
                     'dev', self.config['vwifi_iface']
                 ], check=True)
@@ -656,4 +740,3 @@ class InterfaceManager:
 
     def is_interface_configured(self, iface=None) -> bool:
         return shared.is_interface_configured(iface)
-

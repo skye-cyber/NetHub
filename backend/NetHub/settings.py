@@ -21,7 +21,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 CAPTIVE_NETWORK = "192.168.12.0/24"
 
-FRONTEND_BASE_URL = "http://localhost:40099"
+FRONTEND_BASE_URL = "http://192.168.100.1:40099"
 
 INSTALLED_APPS = [
     "django.contrib.admin",

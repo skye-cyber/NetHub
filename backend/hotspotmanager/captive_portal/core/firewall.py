@@ -1,8 +1,11 @@
 import subprocess
 import re
 from typing import List, Callable, Optional
-
+from ap_utils.colors import fg
 from .config import BaseConfig
+from .error import ErrorHandler
+
+error_handler = ErrorHandler("CaptiveStart")
 
 
 class Firewall:
@@ -11,7 +14,7 @@ class Firewall:
         self.client_interface = self.config.CLIENT_INTERFACE
         self.internet_interface = self.config.INTERNET_INTERFACE
         self.BASE_DIR = self.config.BASE_DIR
-        self.gateway_address = self.config.GATEWAY_ADDRESS
+        self.gateway_address = self.config.GATEWAY
         self.subnet = self.config.SUBNET
         self.captive_port = self.config.CAPTIVE_PORT
         self.AUTH_DIR = self.config.AUTH_DIR
@@ -39,13 +42,47 @@ class Firewall:
         print("Firewall rules updated")
         return True
 
+    @error_handler.exception_factory(Exception)
     def verify_chains(self):
         """Verify and display current iptables chains"""
         print("CAPTIVE_PORTAL chain:")
-        subprocess.run(["iptables", "-L", "CAPTIVE_PORTAL", "-n", "--line-numbers"], check=True)
+        with error_handler.context(lambda: ...):
+            subprocess.run(["iptables", "-L", "CAPTIVE_PORTAL", "-n", "--line-numbers"], check=True)
 
         print("\nAUTH_REDIRECT chain:")
-        subprocess.run(["iptables", "-t", "nat", "-L", "AUTH_REDIRECT", "-n", "--line-numbers"], check=True)
+        with error_handler.context(lambda: ...):
+            subprocess.run(["iptables", "-t", "nat", "-L", "AUTH_REDIRECT", "-n", "--line-numbers"], check=True)
+
+    @error_handler.exception_factory(Exception)
+    def verify_chains_verbose(self):
+        print(f"\n{fg.BYELLOW}1. {fg.RESET}{fg.FWHITE}Current NAT PREROUTING rules:{fg.RESET}\n")
+        subprocess.run(['sudo', 'iptables', '-t', 'nat', '-L', 'PREROUTING', '-n', '--line-numbers', '-v'], check=True)
+
+        print(f"\n{fg.BYELLOW}2. {fg.RESET}{fg.FWHITE}Current FORWARD chain:{fg.RESET}\n")
+        subprocess.run(["sudo", "iptables", "-L", "FORWARD", "-n", "--line-numbers", "-v"], check=True)
+
+        print(f"\n{fg.BYELLOW}3. {fg.RESET}{fg.FWHITE}Checking if packets are hitting the rules:{fg.RESET}\n")
+        print("\tClear counters first...")
+        subprocess.run(["sudo", "iptables", "-t", "nat", "-Z"], check=True)
+        subprocess.run(["sudo", "iptables", "-Z"], check=True)
+
+        print("\n\t♉Now generate traffic from a connected device...")
+        print("\tOr run this from another device: curl -v http://example.com")
+        input("\t⇾ Press Enter after generating traffic...")
+
+        print(f"\n{fg.BYELLOW}4. {fg.RESET}{fg.FWHITE}Packet counters:{fg.RESET}\n")
+        print("\tNAT PREROUTING")
+        subprocess.run(["sudo", "iptables", "-t", "nat", "-L", "PREROUTING", "-n", "-v", "--line-numbers"], check=True)
+
+        print("\n\tFORWARD chain:")
+        subprocess.run(["sudo", "iptables", "-L", "FORWARD", "-n", "-v", "--line-numbers"], check=True)
+
+        print(f"\n{fg.BYELLOW}5. {fg.RESET}{fg.FWHITE}Interface status:{fg.RESET}\n")
+        subprocess.run(["ip", "addr", "show", self.client_interface], check=True)
+
+        print("\tRouting table:")
+        subprocess.run(["ip", "route", "show"], check=True)
+        subprocess.run([], check=True)
 
     def process_macs(self, macs: Optional[List[str]], callback: Optional[Callable[[str], bool]] = None):
         """Process MAC addresses and apply callback if provided"""

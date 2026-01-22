@@ -44,8 +44,26 @@ class Shared:
             return False
 
     def is_dnsmasq_running(self) -> bool:
+        return self.is_service_running(service='dnsmasq')
+
+    def is_hostapd_running(self) -> bool:
+        return self.is_service_running(service='hostapd')
+
+    def is_service_running(self, service) -> bool:
         try:
-            result = subprocess.run(['pidof', 'dnsmasq'],
+            result = subprocess.run(['pidof', service],
+                                    capture_output=True, text=True)
+
+            if result.stdout and int(result.stdout.split(' ')[0]) and result.returncode == 0:
+                return True
+            return False
+        except Exception as e:
+            print(f"Error checking dnsmasq status: {str(e)}")
+            return False
+
+    def kill_service(self, service) -> bool:
+        try:
+            result = subprocess.run(['killall', service],
                                     capture_output=True, text=True)
 
             if result.stdout and int(result.stdout.split(' ')[0]) and result.returncode == 0:
@@ -56,19 +74,10 @@ class Shared:
             return False
 
     def kill_dnsmasq(self) -> bool:
-        try:
-            result = subprocess.run(['killall', 'dnsmasq'],
-                                    capture_output=True, text=True)
-            # Restart
-            subprocess.run(['sudo', 'systemctl', 'restart', 'dnsmasq'],
-                           capture_output=True, text=True)
+        return self.kill_service('dnsmasq')
 
-            if result.returncode == 0:
-                return True
-            return False
-        except Exception as e:
-            print(f"Error killing dnsmasq status: {str(e)}")
-            return False
+    def kill_hostapd(self) -> bool:
+        return self.kill_service('hostapd')
 
     def is_bridge_interface(self, iface=None) -> bool:
         """Check if interface is a bridge interface"""
@@ -91,6 +100,17 @@ class Shared:
             return False
         except Exception as e:
             print(f"Error killing dnsmasq status: {str(e)}")
+            return False
+
+    def get_hostapd_pid(self, pid_file=None):
+        try:
+            if os.path.exists(pid_file):
+                with open(pid_file, 'r') as f:
+                    pid = f.read()
+                    return pid
+            return None
+        except Exception as e:
+            print(f"Error obtaining hostapd pid: {str(e)}: {pid_file}")
             return False
 
 
