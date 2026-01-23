@@ -1,7 +1,7 @@
 # ==================== Backend Data Sources ====================
 from pathlib import Path
 from typing import List, Optional
-
+from .writer import writer
 
 # Try to import requests for API calls, fallback to file
 try:
@@ -34,9 +34,13 @@ class FileDataSource(DataSource):
 
     def get_authenticated_macs(self) -> List[str]:
         """Read authenticated MACs from file"""
+        writer.write("Auth devices")
         try:
             with open(self.auth_file, 'r') as f:
-                return [line.strip().lower() for line in f if line.strip()]
+                dev = [line.strip().lower() for line in f if line.strip()]
+                writer.write(f"Devices:\n{dev}\nRead:\n{f.readlines()}")
+
+                return dev
         except Exception:
             return []
 

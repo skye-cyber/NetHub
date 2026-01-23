@@ -22,6 +22,8 @@ from captive_portal.core.captive_entry import Captive
 from captive_portal.core.config import BaseConfig
 from captive_portal.monitoring.tui import interactive_cli
 from captive_portal.core.config import baseconfig as firewallconfig
+from captive_portal.core.firewall import firewall as auntenticator
+
 
 console = Console()
 version = "1.0.2"
@@ -239,6 +241,50 @@ def hotspot_interfaces(ctx):
         )
 
     console.print(table)
+
+# ==================== AUTHENTICATION COMMANDS ====================
+
+
+@cli.group()
+def auth():
+    """Authenticate mac to the firewall (allows internet access)"""
+    pass
+
+
+@auth.command('authenticate')
+@click.option('--mac', type=str, required=True, help='Device MAC address')
+@click.pass_context
+def authenticate(ctx, mac):
+    '''Authenticate device'''
+    return auntenticator.authenticate(mac)
+
+
+@auth.command('deauthenticate')
+@click.option('--mac', type=str, required=True, help='Device MAC address')
+@click.pass_context
+def deauthenticate(ctx, mac):
+    '''Deauthenticate device'''
+    return auntenticator.dauthenticate(mac)
+
+
+@auth.command('status')
+@click.option('--mac', type=str, required=True, help='Device MAC address')
+@click.option('--hook', type=click.types.STRING, help='Return an http response to given hook eg <http://{address}/hook>')
+@click.pass_context
+def status(ctx, mac, hook):
+    '''Check device auth status'''
+    status = 'AUTHENTICATED' if auntenticator.auth_status(mac) else 'NOT AUTHENTICATED'
+    if hook and hook.trim():
+        # if not validator.is_valid_hook(hook): return
+        ...
+    else:
+        (
+            console.print("[bold]Status[/bold]: [bold green]✓ AUTHENTICATED[/bold green]")
+            if status == 'AUTHENTICATED'
+            else
+            console.print("Status: [red]✗ NOT AUTHENTICATED[/red]")
+        )
+
 
 # ==================== FIREWALL COMMANDS ====================
 
@@ -547,4 +593,3 @@ if __name__ == '__main__':
 
     # Run CLI
     entry()
-

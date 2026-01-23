@@ -103,7 +103,7 @@ class Firewall:
             if callback:
                 callback(cleaned_mac)
             else:
-                self.update_firewall(cleaned_mac)
+                self.update_firewall_allow(cleaned_mac)
 
     def clean_mac(self, mac: str) -> str:
         """Clean and standardize MAC address format"""
@@ -113,11 +113,10 @@ class Firewall:
         """Validate MAC address format"""
         return bool(re.fullmatch(r'^([0-9a-f]{2}:){5}[0-9a-f]{2}$', mac, re.IGNORECASE))
 
-    def update_firewall(self, mac: str):
-        """Update iptables rules for given MAC address"""
+    def update_firewall_allow(self, mac: str):
+        """Update iptables rules for given MAC address to allow internet access"""
         # Check if MAC rule already exists in CAPTIVE_PORTAL
-        check_cmd = ["iptables", "-C", "CAPTIVE_PORTAL", "-m", "mac", "--mac-source", mac]
-        if subprocess.run(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+        if not self.rule_exists(mac):
             print(f"Adding internet access for MAC: {mac}")
             subprocess.run(["iptables", "-I", "CAPTIVE_PORTAL", "1", "-m", "mac", "--mac-source", mac, "-j", "ACCEPT"])
         else:
@@ -131,6 +130,23 @@ class Firewall:
         else:
             print(f"MAC {mac} already has redirect exemption")
 
+    def update_firewall_block(self, mac: str):
+        """Update iptables rules for given MAC address to block internet access"""
+        # Check if MAC rule already exists in CAPTIVE_PORTAL
+        if self.rule_exists(mac):
+            print(f"Removing internet access for MAC: {mac}")
+            subprocess.run(["iptables", "-I", "CAPTIVE_PORTAL", "0", "-m", "mac", "--mac-source", mac, "-j", "DROP"])
+        else:
+            print(f"MAC {mac} already has access")
+
+        # Check if MAC rule already exists in AUTH_REDIRECT
+        check_cmd = ["iptables", "-t", "nat", "-C", "AUTH_REDIRECT", "-m", "mac", "--mac-source", mac]
+        if subprocess.run(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            print(f"Removing redirect exemption for MAC: {mac}")
+            subprocess.run(["iptables", "-t", "nat", "-I", "AUTH_REDIRECT", "1", "-m", "mac", "--mac-source", mac, "-j", "RETURN"])
+        else:
+            print(f"MAC {mac} has no redirect exemption")
+
     def list_from_file(self, file: str) -> List[str]:
         """Read MAC addresses from file"""
         try:
@@ -142,8 +158,21 @@ class Firewall:
     def flush_contrac(self, mac: str) -> bool:
         """Flush connection tracking for given MAC address"""
         print(f"Flushing connection tracking for MAC: {mac}")
-        subprocess.run(["conntrack", "-D", "-m", mac], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
+        return subprocess.run(["conntrack", "-D", "-m", mac], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+    def rule_exists(self, mac) -> bool:
+        '''Check if MAC rule already exists in CAPTIVE_PORTAL'''
+        check_cmd = ["iptables", "-C", "CAPTIVE_PORTAL", "-m", "mac", "--mac-source", mac]
+        return subprocess.run(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+    def authenticate(self, mac: str):
+        return self.update_firewall_allow(mac)
+
+    def dauthenticate(self, mac: str):
+        return self.update_firewall_block(mac)
+
+    def auth_status(self, mac: str):
+        return self.rule_exists(mac)
 
 
 # Initialize firewall instance with shared config

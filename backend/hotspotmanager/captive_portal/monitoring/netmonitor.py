@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Device Monitor with TUI - Real-time network device monitoring
+Network Device Scanning and monitoring
 """
+import re
 import socket
 import subprocess
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from .config import Config
+from .writer import writer
+
 
 # ==================== Network Scanner ====================
-
 
 class NetworkScanner:
     """Scans network for connected devices"""
@@ -48,14 +50,20 @@ class NetworkScanner:
             cmd = ["ip", "neigh", "show", "dev", self.interface]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
 
+            states = ["REACHABLE", "FAILED", "STALE"]
+
             for line in result.stdout.strip().split('\n'):
                 if line:
                     parts = line.split()
-                    if len(parts) >= 5:
+                    if len(parts) >= 4:
                         ip = parts[0]
-                        mac = parts[4].lower()
-                        if self._is_valid_mac(mac):
-                            devices.append((ip, mac))
+                        mac = parts[2].lower()
+                        if self._is_valid_mac(mac) and self.is_valid_ip(ip):
+                            seen_states = [state for state in states if state in parts]
+
+                            device_state = seen_states[0] if len(seen_states) > 0 else '-'
+
+                            devices.append((ip, mac, device_state))
 
         except subprocess.TimeoutExpired:
             pass
@@ -114,9 +122,12 @@ class NetworkScanner:
 
         return info
 
+    def is_valid_ip(self, ip: str) -> bool:
+        ip_match = re.search(r'[0-9]+[\.0-9]*', ip).group(0)
+        return ip_match and len(ip_match.split('.')) >= 4
+
     def _is_valid_mac(self, mac: str) -> bool:
         """Validate MAC address format"""
-        import re
         mac_pattern = re.compile(r'^([0-9a-f]{2}[:-]){5}([0-9a-f]{2})$', re.IGNORECASE)
         return bool(mac_pattern.match(mac))
 

@@ -1,4 +1,6 @@
-# ==================== TUI Components ====================
+"""
+Device Monitor with TUI - Real-time network device monitoring
+"""
 import sys
 import os
 import time
@@ -23,7 +25,10 @@ from .device import Device
 from .netmonitor import NetworkScanner
 from .datasources import DataSource, FileDataSource, APIDataSource
 from .datasources import HAS_REQUESTS
+from .writer import writer
 
+
+# ==================== TUI Components ====================
 
 class DeviceMonitorTUI:
     """Terminal UI for device monitoring"""
@@ -43,6 +48,7 @@ class DeviceMonitorTUI:
         self.ui_thread = threading.Thread(target=self._ui_loop, daemon=True)
 
     def start(self):
+        writer.write("Start all threads")
         """Start monitoring"""
         self.scan_thread.start()
         self.ui_thread.start()
@@ -67,9 +73,11 @@ class DeviceMonitorTUI:
 
     def _scan_loop(self):
         """Background scanning loop"""
+        writer.write("Started scan thread")
         while self.running:
             try:
                 self._perform_scan()
+                writer.write(f"Loop Scan:\n{Config.SCAN_INTERVAL}")
                 time.sleep(Config.SCAN_INTERVAL)
             except Exception as e:
                 self.console.print(f"[red]Scan error: {e}[/red]")
@@ -91,17 +99,18 @@ class DeviceMonitorTUI:
 
         # Scan network
         devices_data = self.scanner.scan_arp()
+        writer.write(f"DATA: \n{devices_data}")
 
         # Update devices
         current_macs = set()
-        for ip, mac in devices_data:
+        for ip, mac, state in devices_data:
             current_macs.add(mac)
 
             if mac in self.devices:
                 device = self.devices[mac]
                 device.update()
             else:
-                device = Device(ip, mac, mac in auth_macs)
+                device = Device(ip, mac, mac in auth_macs, state)
                 device.hostname = self.scanner.get_hostname(ip)
                 device.vendor = self.scanner.get_vendor(mac)
                 self.devices[mac] = device
@@ -120,6 +129,7 @@ class DeviceMonitorTUI:
         # Update interface stats
         self.interface_stats = self.scanner.get_interface_stats()
         self.last_scan = datetime.now()
+        writer.write(f"Devices UPD:\n{self.devices}")
 
     def _generate_layout(self) -> Layout:
         """Generate the TUI layout"""
@@ -157,6 +167,7 @@ class DeviceMonitorTUI:
                 title=f"[bold]Connected Devices ({len(self.devices)})[/bold]",
                 border_style="green",
                 padding=(1, 1)
+                # expand=True
             )
         )
 
@@ -175,7 +186,7 @@ class DeviceMonitorTUI:
         footer_text = Text()
         footer_text.append(" [Q]uit ", style="bold white on red")
         footer_text.append(" [A]uthenticate ", style="bold white on green")
-        footer_text.append(" [B]lock ", style="bold white on yellow")
+        footer_text.append(" [B]lock ", style="bold white on #a16b00")
         footer_text.append(" [R]efresh ", style="bold white on blue")
         footer_text.append(f" Last scan: {self.last_scan.strftime('%H:%M:%S')} ",
                            style="dim white")
@@ -198,12 +209,13 @@ class DeviceMonitorTUI:
             expand=True
         )
 
-        table.add_column("IP", style="cyan", width=15)
-        table.add_column("MAC", style="blue", width=18)
+        table.add_column("IP", style="cyan", width=19)
+        table.add_column("MAC", style="#0055ff", width=20)
         table.add_column("Status", width=12)
+        table.add_column("State", style="#ffff7f", width=12)
         table.add_column("Hostname", style="green", width=20)
-        table.add_column("Vendor", style="yellow", width=25)
-        table.add_column("Seen", style="dim white", width=10)
+        table.add_column("Vendor", style="yellow", width=20)
+        table.add_column("Seen", style="dim white", width=9)
 
         # Sort devices by IP
         sorted_devices = sorted(self.devices.values(), key=lambda d: d.ip)
@@ -214,6 +226,8 @@ class DeviceMonitorTUI:
                 status = "[green]✓ AUTH[/green]"
             else:
                 status = "[red]✗ BLOCKED[/red]"
+
+            state = device.state
 
             # Hostname
             hostname = device.hostname or "Unknown"
@@ -236,6 +250,7 @@ class DeviceMonitorTUI:
                 device.ip,
                 device.mac,
                 status,
+                state,
                 hostname,
                 vendor,
                 seen

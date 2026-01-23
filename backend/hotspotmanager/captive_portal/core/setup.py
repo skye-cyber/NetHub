@@ -26,7 +26,7 @@ class CaptiveSetup:
         """
         Setup captive portal configuration
 
-        This matches the bash script exactly:
+        This matches expected standard based on tried out steps:
         1. Enable IP forwarding
         2. Clear all rules
         3. Create chains
@@ -236,7 +236,6 @@ class CaptiveSetup:
         try:
             # ===== CRITICAL RULE MISSING IN PYTHON VERSION =====
             # Main forwarding chain - send all client traffic to captive portal chain
-            # This was missing from your Python code!
             subprocess.run([
                 "iptables", "-A", "FORWARD", "-i", self.client_interface,
                 "-o", self.internet_interface, "-j", "CAPTIVE_PORTAL"
@@ -338,7 +337,7 @@ class CaptiveSetup:
 
     def verify_setup(self) -> bool:
         """
-        Verify the setup matches the bash script
+        Verify the setup matches expected standard
 
         Returns True if all checks pass
         """
