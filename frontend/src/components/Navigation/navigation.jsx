@@ -16,7 +16,7 @@ import ThemeToggle from '../Themes/useTheme';
 const Navigation = () => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const location = useLocation(); // Get current route
-    const [freemode, setFreemode] = useState(false);
+    const [freemode, setFreemode] = useState(true);
 
     const navigation = [
         { name: 'Dashboard', path: '/dashboard', icon: ChartBarIcon },
@@ -88,21 +88,20 @@ const Navigation = () => {
                             <div className="hidden md:flex items-center space-x-3 ml-2">
                                 <ThemeToggle />
                             </div>
-
-                            {/* Mobile menu button */}
-                            <div className="sm:hidden">
-                                <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
-                                    onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                                >
-                                    {mobileMenuOpen ? (
-                                        <XMarkIcon className="block h-6 w-6" />
-                                    ) : (
-                                        <Bars3Icon className="block h-6 w-6" />
-                                    )}
-                                </button>
-                            </div>
+                        </div>
+                        {/* Mobile menu button */}
+                        <div className="flex sm:hidden">
+                            <button
+                                type="button"
+                                className="inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-none"
+                                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                            >
+                                {mobileMenuOpen ? (
+                                    <XMarkIcon className="block h-6 w-6" />
+                                ) : (
+                                    <Bars3Icon className="block h-6 w-6" />
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -111,7 +110,7 @@ const Navigation = () => {
                 {mobileMenuOpen && (
                     <div
                         onMouseLeave={() => setMobileMenuOpen(!mobileMenuOpen)}
-                        className="w-fit md:w-full border-x border-b border-r-none shadow-xl sm:border-none p-2 sm:p-0  sm:hidden absolute right-0 z-40 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+                        className="w-fit md:w-full h-[100vh] border-x border-b border-r-none shadow-xl sm:border-none p-2 sm:p-0  sm:hidden absolute right-0 z-40 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
                         <div className="pt-2 pb-3 space-y-1">
                             {navigation.map((item) => (
                                 <a
@@ -154,7 +153,7 @@ const Navigation = () => {
             </nav>
 
             {/* Quick Stats Bar */}
-            <div className="hidden xs:flex bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            <div className="hidden xs:flex bg-gray-50 dark:bg-primary-800 border-b border-gray-200 dark:border-gray-700 scroll-smooth">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div className="flex overflow-x-auto py-2 space-x-6">
                         <div className="flex items-center space-x-2 whitespace-nowrap">

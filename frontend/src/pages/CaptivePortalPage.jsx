@@ -30,8 +30,12 @@ const CaptivePage = () => {
 
     const addFloatingParticles = useCallback(() => {
         const container = document.querySelector("#particles-container");
+        // Clear existing particles if any >> minimizeresource usage due to animation overhead
+        document.querySelectorAll('#partible')?.forEach((el) => el.remove())
+
         for (let i = 0; i < 100; i++) {
             const particle = document.createElement('div')
+            particle.id = 'partible'
             const bg_color = particle_colors[(Math.random() + 1 * 10).toFixed(0)] || particle_colors[2]
 
             particle.className = `absolute z-[20] w-1 h-1 ${bg_color} rounded-full pointer-events-none dark:brightness-100`
@@ -113,7 +117,7 @@ const CaptivePage = () => {
                         <div className="logo flex items-center gap-2">
                             <div className="logo-icon text-lg animate-heartpulse">⚡</div>
                             <h1 className='font-orbitron text-2xl font-bold tracking-tighter bg-gradient-to-br from-blue-600 to-purple-700 dark:from-[#00f0ff] dark:to-[#7b42f6] bg-clip-text text-transparent'>
-                                NEO<span className='text-gray-800 dark:text-[#7944ff] ml-1'>PORTAL</span>
+                                Captive<span className='text-gray-800 dark:text-[#7944ff] ml-1'>PORTAL</span>
                             </h1>
                         </div>
                         <div className="network-status flex items-center gap-2 text-xs text-gray-500 dark:text-[#00f0ff]/70">
@@ -126,7 +130,7 @@ const CaptivePage = () => {
                     <div className="welcome-section text-center mb-6">
                         <h2 className='font-orbitron text-lg mb-3 bg-gradient-to-br from-gray-800 to-blue-600 dark:from-white dark:to-[#00f0ff] bg-clip-text text-transparent'>QUANTUM NETWORK ACCESS</h2>
                         <p className='text-gray-600 dark:text-gray-300 leading-relaxed text-sm'>
-                            You've entered the secure gateway. Accept terms to proceed with full bandwidth access.
+                            You've entered a secure gateway. Accept terms to proceed with full bandwidth access.
                         </p>
                     </div>
 
@@ -171,7 +175,7 @@ const CaptivePage = () => {
                         <button
                             id="connectBtn"
                             onClick={handleConnect}
-                            className="connect-button relative flex justify-center gap-2 overflow-hidden w-full bg-gradient-to-r from-blue-500 to-purple-600 dark:from-[#4993dc] dark:to-[#366ba1] border-none rounded-lg py-4 font-orbitron font-semibold text-white cursor-pointer transition-all duration-300 ease-in-out hover:-translate-y-[1px] shadow-lg hover:shadow-xl dark:shadow-[0_0_30px_#00f0ff/30] active:translate-y-0"
+                            className="connect-button relative flex justify-center gap-2 overflow-hidden w-full bg-gradient-to-r from-blue-500 to-purple-600 dark:from-cyber-800 dark:to-cyber-600 border-none rounded-lg py-4 font-orbitron font-semibold text-white cursor-pointer transition-all duration-300 ease-in-out hover:-translate-y-[1px] shadow-lg hover:shadow-xl dark:shadow-[0_0_30px_#00f0ff/30] active:translate-y-0"
                         >
                             <div className={`btn-loader ${loading ? 'flex' : 'hidden'} gap-1 justify-center items-center`}>
                                 <div className="loader-dot w-2 h-2 rounded-full bg-white dark:bg-green-300 animate-bounce" style={{ animationDelay: '-0.32s' }}></div>
@@ -188,7 +192,7 @@ const CaptivePage = () => {
                         <div className="security-badge flex items-center gap-2">
                             <span>🔒 QUANTUM ENCRYPTED</span>
                         </div>
-                        <div className="version text-center sm:text-right">v0.1.1 • NEO NETWORKS</div>
+                        <div className="version text-center sm:text-right">v0.1.1 • NetHub NETWORKS</div>
                     </div>
                 </div>
             </div>

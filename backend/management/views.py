@@ -311,3 +311,12 @@ def admin_check_access(request, mac):
         "device_info": {},
         "status": False
     })
+
+
+def heartbeat(request):
+    """Check access for specific MAC"""
+    # Get device info
+    return JsonResponse({
+        "success": True,
+        "status": True
+    })

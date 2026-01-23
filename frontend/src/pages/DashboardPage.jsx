@@ -40,14 +40,14 @@ const DashboardPage = () => {
             icon: SignalIcon,
             description: 'Test your connection speed',
             action: () => alert('Starting speed test...'),
-            color: 'from-blue-500 to-cyan-500'
+            color: 'from-primary-200 via-blue-500 to-accent-500 dark:via-primary-700 dark:to-primary-700 dark:border-2 dark:border-primary-100 dark:border-x-secondary-50'
         },
         {
             name: 'Network Scan',
             icon: WifiIcon,
             description: 'Discover nearby networks',
             action: () => alert('Scanning networks...'),
-            color: 'from-green-500 to-emerald-500'
+            color: 'from-green-500 to-emerald-500 dark:from-green-700 dark:to-emerald-600'
         },
         {
             name: 'Data Usage',
@@ -89,29 +89,30 @@ const DashboardPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-blue-900 p-4">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-primary-900 dark:to-blue-900 p-4">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
                         Network Dashboard
                     </h1>
-                    <p className="text-gray-600 dark:text-gray-300">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
                         Welcome to your personal network hub
                     </p>
                 </div>
 
                 {/* Connection Status Card */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-6 border-l-4 border-green-500">
+                <div className="bg-white dark:bg-primary-900 rounded-2xl shadow-lg p-6 mb-6 border-l-4 border-green-500 dark:border-r-4 dark:border-r-primary-100 dark:border-y-2 dark:border-y-primary-50">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-heartpulse shadow-balanced"></div>
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                        <div className="flex items-center space-x-2 sm:space-x-4">
+
                             <div>
-                                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                                    Connected & Secure
-                                </h2>
+                                <h4 className="sm:text-xl font-semibold text-gray-900 dark:text-white">
+                                    Connected <span className='hidden sm:flex'>& Secure</span>
+                                </h4>
                                 <p className="text-gray-600 dark:text-gray-300 text-sm">
-                                    Your connection is active and protected
+                                    Your connection is secure
                                 </p>
                             </div>
                         </div>
@@ -127,35 +128,35 @@ const DashboardPage = () => {
                 {/* Main Stats Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     {/* Signal Strength */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-4">
-                            <WifiIcon className="w-8 h-8 text-blue-500" />
+                    <div className="bg-white dark:bg-primary-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-2 dark:border-primary-200">
+                        <div className="flex items-center justify-between mb-0">
+                            <WifiIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500" />
                             <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                                {networkStats.signalStrength}%
+                                {networkStats.signalStrength}<span className='text-sm ml-0.5'>%</span>
                             </span>
                         </div>
-                        <h3 className="text-gray-700 dark:text-gray-300 font-medium mb-2">Signal Strength</h3>
+                        <h4 className="sm:text-xl text-gray-700 dark:text-gray-300 font-medium mb-1">Signal Strength</h4>
                         <NetworkQualityIndicator strength={networkStats.signalStrength} />
                     </div>
 
                     {/* Download Speed */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-4">
-                            <ArrowPathIcon className="w-8 h-8 text-green-500" />
+                    <div className="bg-white dark:bg-primary-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-2 dark:border-primary-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <ArrowPathIcon className="w-6 h-6 sm:w-8 sm:h-8 text-green-500" />
                             <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                                {networkStats.downloadSpeed} Mbps
+                                {networkStats.downloadSpeed}<span className='text-sm ml-0.5'>Mbps</span>
                             </span>
                         </div>
-                        <h3 className="text-gray-700 dark:text-gray-300 font-medium mb-2">Download Speed</h3>
+                        <h4 className="sm:text-xl text-gray-700 dark:text-gray-300 font-medium mb-1">Download Speed</h4>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Current rate</p>
                     </div>
 
                     {/* Data Usage */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-4">
-                            <ChartBarIcon className="w-8 h-8 text-purple-500" />
+                    <div className="bg-white dark:bg-primary-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-2 dark:border-primary-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <ChartBarIcon className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500" />
                             <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                                {dataUsage.used} GB
+                                {dataUsage.used}<span className='text-sm ml-0.5'>GB</span>
                             </span>
                         </div>
                         <h3 className="text-gray-700 dark:text-gray-300 font-medium mb-2">Data Usage</h3>
@@ -171,14 +172,14 @@ const DashboardPage = () => {
                     </div>
 
                     {/* Security Status */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-4">
-                            <ShieldCheckIcon className="w-8 h-8 text-green-500" />
-                            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <div className="bg-white dark:bg-primary-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-2 dark:border-primary-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <ShieldCheckIcon className="w-6 h-6 sm:w-8 sm:h-8 text-green-500" />
+                            <span className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">
                                 Protected
                             </span>
                         </div>
-                        <h3 className="text-gray-700 dark:text-gray-300 font-medium mb-2">Security</h3>
+                        <h3 className="text-gray-700 dark:text-gray-300 font-medium mb-1">Security</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Encrypted connection</p>
                     </div>
                 </div>
@@ -204,7 +205,7 @@ const DashboardPage = () => {
                 {/* Network Details */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Connection Details */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6">
+                    <div className="bg-white dark:bg-primary-800 rounded-2xl shadow-md p-6">
                         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                             <InformationCircleIcon className="w-6 h-6 mr-2 text-blue-500" />
                             Connection Details
@@ -230,7 +231,7 @@ const DashboardPage = () => {
                     </div>
 
                     {/* Recent Activity */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6">
+                    <div className="bg-white dark:bg-primary-800 rounded-2xl shadow-md p-6">
                         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
                             Recent Activity
                         </h2>
@@ -246,7 +247,7 @@ const DashboardPage = () => {
                                         }`}></div>
                                     <div className="flex-1">
                                         <p className="text-gray-900 dark:text-white">{activity.action}</p>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">{activity.time}</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-300">{activity.time}</p>
                                     </div>
                                 </div>
                             ))}

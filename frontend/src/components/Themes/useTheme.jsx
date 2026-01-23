@@ -43,7 +43,7 @@ const ThemeToggle = () => {
     return (
         <button
             onClick={toggleTheme}
-            className="relative w-12 h-6 rounded-full bg-gradient-to-r from-blue-400 to-purple-500 dark:from-gray-600 dark:to-gray-700 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="relative w-12 h-6 rounded-full bg-gradient-to-r from-blue-400 to-purple-500 dark:from-gray-600 dark:to-gray-700 transition-all duration-300 focus:outline-none  focus:ring-none"
             aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
         >
             {/* Track */}

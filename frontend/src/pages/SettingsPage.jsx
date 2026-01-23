@@ -70,7 +70,7 @@ const SettingsPage = () => {
     };
 
     const SettingSection = ({ title, icon: Icon, children }) => (
-        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-700/50 mb-6">
+        <div className="bg-white/80 dark:bg-primary-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-700/50 mb-6">
             <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-200/50 dark:border-gray-600/50">
                 <Icon className="w-6 h-6 text-blue-500" />
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h2>
@@ -92,7 +92,7 @@ const SettingsPage = () => {
             <button
                 onClick={() => onChange(!value)}
                 disabled={disabled}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${value ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-none ${value ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'
                     } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                 <span
@@ -118,7 +118,7 @@ const SettingsPage = () => {
                     onChange={(e) => onChange(e.target.value)}
                     min={min}
                     max={max}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
                 />
                 {unit && <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">{unit}</span>}
             </div>
@@ -136,7 +136,7 @@ const SettingsPage = () => {
             <select
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white"
             >
                 {options.map(option => (
                     <option key={option.value} value={option.value}>
@@ -148,7 +148,7 @@ const SettingsPage = () => {
     );
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20 p-4">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:from-primary-700 dark:via-purple-900/20 dark:to-primary-700 p-4">
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="mb-8">
@@ -173,7 +173,7 @@ const SettingsPage = () => {
                         <SettingSection title="Network Configuration" icon={WifiIcon}>
                             <div className="space-y-2">
                                 {/*<SelectSetting
-                                    label="Seletc Network"
+                                    label="Select Network"
                                     description="Network to configure"
                                     options={[]}
                                     value={settings.network_name}
@@ -196,6 +196,7 @@ const SettingsPage = () => {
                                     min="1"
                                     max="20"
                                 />
+
                                 <InputSetting
                                     label="Session Timeout"
                                     description="Hours before requiring re-authentication"
@@ -216,6 +217,7 @@ const SettingsPage = () => {
                                     min="100"
                                     max="10000"
                                 />
+
                                 <ToggleSetting
                                     label="Guest Network"
                                     description="Allow guest access without authentication"
@@ -252,6 +254,7 @@ const SettingsPage = () => {
                                                     value={settings.payment_gateway}
                                                     onChange={(value) => handleSettingChange('payment_gateway', value)}
                                                     options={[
+                                                        { value: 'mpesa', label: 'M-Pesa' },
                                                         { value: 'stripe', label: 'Stripe' },
                                                         { value: 'paypal', label: 'PayPal' },
                                                         { value: 'razorpay', label: 'Razorpay' },
@@ -264,6 +267,7 @@ const SettingsPage = () => {
                                                     value={settings.currency}
                                                     onChange={(value) => handleSettingChange('currency', value)}
                                                     options={[
+                                                        { value: 'KSH', label: 'Kenya Shilling (Ksh.)' },
                                                         { value: 'USD', label: 'US Dollar ($)' },
                                                         { value: 'EUR', label: 'Euro (€)' },
                                                         { value: 'GBP', label: 'British Pound (£)' },
@@ -430,7 +434,7 @@ const SettingsPage = () => {
                         </SettingSection>
 
                         {/* Save Actions */}
-                        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-700/50">
+                        <div className="bg-white/80 dark:bg-primary-800/80 backdrop-blur-sm rounded-2xl shadow-centered-lg p-6 border border-white/20 dark:border-gray-700/50">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
@@ -468,7 +472,7 @@ const SettingsPage = () => {
                     </>
                 )}
             </div>
-        </div>
+        </div >
     );
 };
 

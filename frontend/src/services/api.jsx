@@ -25,7 +25,7 @@ api.interceptors.response.use(
 );
 
 export const connectToNetwork = () => api.post('/connect');
-export const getStatus = () => api.get('/status');
+export const pingServer = () => api.get('/status/heartbeat');
 export const deviceInfor = () => api.get('/clientinfo');
 export const grantAccess = (mac) => api.post(`/admin/grant_access/${mac}`);
 export const revokeAccess = (mac) => api.post(`/admin/revoke_access/${mac}`);
@@ -41,6 +41,8 @@ export const getUsers = async () => api.get('/users');
 export const createUser = async (userData) => api.post('/users', userData);
 
 export const generateAccessCode = async (codeData) => api.get('access-codes', codeData);
+
+export const getDevices = async () => api.get('/devices');
 
 export const getDeviceHistory = async () => api.get('/devices/v2');
 

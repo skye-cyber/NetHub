@@ -47,7 +47,7 @@ class NetworkAPIView(BaseAPIView):
         try:
             network = Network.objects.create(
                 name=data.get('name'),
-                interface=data.get('interface', 'ap0'),
+                interface=data.get('interface', 'xap0'),
                 ssid=data.get('ssid'),
                 security=data.get('security', 'wpa2'),
                 password=data.get('password'),
@@ -96,13 +96,18 @@ def connect(request):
                 auth_status='pending',
                 user_agent='',
             )
+            # TODO: Construct response hook
+            hook = ''
+
             # Update firewall rules
             subprocess.run(
-                ["sudo", (BASE_DIR / "scripts/update_firewall.sh").as_posix()],
+                ["sudo", 'ap_manager', 'auth', 'authenticate', '--mac', client_mac, '--hook', hook],
                 check=False,
             )
 
             # Update auth status
+            # TODO: execute 'sudo ap_manager auth status --mac client_mac --hook hook' to confirm auth status
+
             device.is_authenticated = True
             device.auth_status = 'authenticated'
             device.save()

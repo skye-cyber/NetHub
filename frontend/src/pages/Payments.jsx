@@ -30,12 +30,12 @@ const PaymentPage = () => {
             id: '30min',
             name: '30 Minutes',
             duration: '30 minutes',
-            price: 50,
-            originalPrice: 70,
-            savings: '29%',
+            price: 5,
+            originalPrice: 10,
+            savings: '50%',
             features: [
                 'Basic internet access',
-                'Standard speed (10 Mbps)',
+                'Standard speed (2 Mbps)',
                 'Email & messaging',
                 'Social media access'
             ],
@@ -46,12 +46,12 @@ const PaymentPage = () => {
             id: '1hour',
             name: '1 Hour',
             duration: '1 hour',
-            price: 80,
-            originalPrice: 100,
-            savings: '20%',
+            price: 10,
+            originalPrice: 15,
+            savings: '34%',
             features: [
                 'Enhanced internet access',
-                'Fast speed (25 Mbps)',
+                'Fast speed (5 Mbps)',
                 'Streaming music',
                 'Video calls',
                 'Cloud storage access'
@@ -63,12 +63,12 @@ const PaymentPage = () => {
             id: '4hours',
             name: '4 Hours',
             duration: '4 hours',
-            price: 250,
-            originalPrice: 320,
-            savings: '22%',
+            price: 15,
+            originalPrice: 20,
+            savings: '34%',
             features: [
                 'Premium internet access',
-                'High speed (50 Mbps)',
+                'High speed (8 Mbps)',
                 'HD video streaming',
                 'Online gaming',
                 'Large file downloads',
@@ -81,12 +81,12 @@ const PaymentPage = () => {
             id: '1day',
             name: '24 Hours',
             duration: '24 hours',
-            price: 400,
-            originalPrice: 500,
-            savings: '20%',
+            price: 60,
+            originalPrice: 80,
+            savings: '25%',
             features: [
                 'Full day access',
-                'Ultra speed (100 Mbps)',
+                'Ultra speed (10 Mbps)',
                 '4K streaming',
                 'Multiple devices',
                 'VPN access',
@@ -99,12 +99,12 @@ const PaymentPage = () => {
             id: '1week',
             name: '1 Week',
             duration: '7 days',
-            price: 2000,
-            originalPrice: 2800,
+            price: 250,
+            originalPrice: 280,
             savings: '29%',
             features: [
                 'Weekly unlimited access',
-                'Maximum speed (200 Mbps)',
+                'Maximum speed (8 Mbps)',
                 'Unlimited streaming',
                 'Up to 5 devices',
                 'Advanced security',
@@ -118,12 +118,12 @@ const PaymentPage = () => {
             id: '1month',
             name: '1 Month',
             duration: '30 days',
-            price: 6000,
-            originalPrice: 9000,
-            savings: '33%',
+            price: 600,
+            originalPrice: 700,
+            savings: '14%',
             features: [
                 'Monthly unlimited access',
-                'Gigabit speed (1 Gbps)',
+                'Gigabit speed (6 Gbps)',
                 'Unlimited devices',
                 'Enterprise security',
                 'Dedicated support',
@@ -269,11 +269,11 @@ const PaymentPage = () => {
             <div
                 className={`bg-white/80 dark:bg-primary-800/80 backdrop-blur-sm rounded-2xl shadow-lg border-2 transition-all duration-300 hover:scale-105 hover:shadow-xl ${isSelected
                     ? 'border-blue-500 dark:border-blue-400 shadow-blue-200 dark:shadow-blue-900/50'
-                    : 'border-white/20 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600'
-                    } ${plan.popular ? 'ring-2 ring-purple-500 dark:ring-purple-400' : ''}`}
+                    : 'border-white/20 dark:border-primary-200 hover:border-gray-300 dark:hover:border-purple-600'
+                    } ${plan.popular ? 'border-t-8 border-t-purple-500 dark:boreder-t-purple-400 hover:border-t-purple-600' : ''}`}
             >
                 {plan.popular && (
-                    <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-center py-2 text-sm font-semibold rounded-t-2xl">
+                    <div className="bg-gradient-to-r from-purple-800 to-pink-800 text-white text-center py-2 text-sm font-semibold rounded-t-sm">
                         MOST POPULAR
                     </div>
                 )}
@@ -292,11 +292,11 @@ const PaymentPage = () => {
                     {/* Price */}
                     <div className="text-center mb-6">
                         <div className="flex items-center justify-center space-x-2 mb-2">
-                            <span className="text-4xl font-bold text-gray-900 dark:text-white">
+                            <span className="text-2xl sm:text-4xl font-bold text-gray-900 dark:text-white">
                                 KES {plan.price}
                             </span>
                             {plan.originalPrice && (
-                                <span className="text-lg text-gray-500 dark:text-gray-400 line-through">
+                                <span className="text-md sm:text-lg text-gray-500 dark:text-gray-400 line-through">
                                     KES {plan.originalPrice}
                                 </span>
                             )}
@@ -636,14 +636,14 @@ const PaymentPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-primary-50 via-blue-50 to-cyan-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20 p-4">
+        <div className="min-h-screen bg-gradient-to-br from-accent-50/50 via-accent-50/20 to-cyan-50 dark:from-primary-700 dark:via-purple-950/20 dark:to-primary-700/20 p-4">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-12">
-                    <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+                    <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
                         Choose Your Internet Plan
                     </h1>
-                    <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                    <p className="text-sm md:text-md text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
                         Get instant access to high-speed internet with flexible pricing options
                     </p>
                 </div>
@@ -656,7 +656,7 @@ const PaymentPage = () => {
                 </div>
 
                 {/* Features Section */}
-                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-8 border border-white/20 dark:border-gray-700/50">
+                <div className="bg-white/80 dark:bg-primary-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-8 border border-white/20 dark:border-gray-700/50">
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white text-center mb-8">
                         Why Choose Our Internet?
                     </h2>

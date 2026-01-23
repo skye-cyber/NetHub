@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import {
+    getDevices,
+    grantAccess,
+    revokeAccess
+} from '../services/api';
 import {
     WifiIcon,
     ComputerDesktopIcon,
@@ -55,8 +59,8 @@ const DevicesPage = () => {
         const fetchDevices = async () => {
             try {
                 setLoading(true);
-                // const response = await axios.get('/status');
-                // setDevices(response.data.connected_devices);
+                const response = await getDevices();
+                setDevices(response.data.connected_devices);
             } catch (error) {
                 console.error('Error fetching devices:', error);
             } finally {
@@ -64,13 +68,13 @@ const DevicesPage = () => {
             }
         };
 
-        fetchDevices();
+        //fetchDevices();
     }, []);
 
     const handleGrantAccess = async (mac) => {
         try {
             setLoading(true);
-            // await axios.post(`/admin/grant_access/${mac}`);
+            //await grantAccess(mac);
             setDevices(devices.map(device =>
                 device.mac === mac ? { ...device, authenticated: true } : device
             ));
@@ -84,7 +88,7 @@ const DevicesPage = () => {
     const handleRevokeAccess = async (mac) => {
         try {
             setLoading(true);
-            // await axios.post(`/admin/revoke_access/${mac}`);
+            // await revokeAccess(mac)
             setDevices(devices.map(device =>
                 device.mac === mac ? { ...device, authenticated: false } : device
             ));
@@ -125,7 +129,7 @@ const DevicesPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-blue-900 p-4">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-primary-800 dark:to-primary-700 p-4">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="mb-8">
@@ -140,9 +144,9 @@ const DevicesPage = () => {
                         </div>
                         <button
                             onClick={() => window.location.reload()}
-                            className="flex items-center space-x-2 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow-md hover:shadow-lg transition-shadow"
+                            className="flex items-center space-x-2 bg-white dark:bg-secondary-950 dark:border dark:border-cyber-700 px-4 py-2 rounded-lg shadow-md hover:shadow-balanced-lg transition-shadow text-gray-600 dark:text-gray-100"
                         >
-                            <ArrowPathIcon className={`w-5 h-5 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
+                            <ArrowPathIcon className={`w-5 h-5 text-gray-600 dark:text-gray-100 ${loading ? 'animate-spin' : ''}`} />
                             <span>Refresh</span>
                         </button>
                     </div>
@@ -150,7 +154,7 @@ const DevicesPage = () => {
 
                 {/* Stats Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                    <div className="bg-white dark:bg-secondary-900 rounded-xl shadow-centered-md dark:shadow-primary-400 p-6 dark:border-x-2 dark:border-x-cyber-600">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Total Devices</p>
@@ -160,7 +164,7 @@ const DevicesPage = () => {
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                    <div className="bg-white dark:bg-secondary-900 rounded-xl shadow-centered-md dark:shadow-primary-400 p-6 dark:border-x-2 dark:border-x-green-600">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Authenticated</p>
@@ -172,7 +176,7 @@ const DevicesPage = () => {
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                    <div className="bg-white dark:bg-secondary-900 rounded-xl shadow-centered-md dark:shadow-primary-400 p-6 dark:border-x-2 dark:border-x-red-600">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Blocked</p>
@@ -184,7 +188,7 @@ const DevicesPage = () => {
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                    <div className="bg-white dark:bg-secondary-900 rounded-xl shadow-centered-md dark:shadow-primary-400 p-6 dark:border-x-2 dark:border-x-purple-600">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Active Now</p>
@@ -198,8 +202,8 @@ const DevicesPage = () => {
                 </div>
 
                 {/* Devices Table */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
-                    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="bg-white dark:bg-primary-800 rounded-2xl shadow-centered-lg dark:shadow-primary-500 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-200 dark:border-none">
                         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                             Network Devices
                         </h2>
@@ -207,8 +211,8 @@ const DevicesPage = () => {
 
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50 dark:bg-gray-700">
-                                <tr>
+                            <thead className="bg-gray-100 dark:bg-primary-950 dark:border-y dark:border-b-2 dark:border-y-cyber-800">
+                                <tr className='divide-x dark:divide-cyber-500'>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                         Device
                                     </th>
@@ -228,7 +232,7 @@ const DevicesPage = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
                                 {devices.map((device, index) => (
-                                    <tr key={device.mac} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                    <tr key={device.mac} className="hover:bg-gray-50 dark:hover:bg-purple-700/10 transition-colors">
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center">
                                                 <div className="flex-shrink-0">

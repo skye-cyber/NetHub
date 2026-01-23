@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Snackbar, Alert } from '@mui/material';
-import { getStatus } from '../services/api';
+import { pingServer } from '../services/api';
 
 const ConnectionStatus = () => {
     const [open, setOpen] = useState(false);
@@ -9,8 +9,8 @@ const ConnectionStatus = () => {
     useEffect(() => {
         const checkConnection = async () => {
             try {
-                const status = await getStatus();
-                setStatus('online');
+                const status = await pingServer();
+                status.status === 200 ? setStatus('online') : setStatus('offline');
             } catch (error) {
                 console.log(error)
                 setStatus('offline');
@@ -22,7 +22,7 @@ const ConnectionStatus = () => {
         checkConnection();
 
         // Then check periodically
-        const interval = setInterval(checkConnection, 30000);
+        const interval = setInterval(checkConnection, 60_000);
 
         return () => clearInterval(interval);
     }, [setStatus]);
