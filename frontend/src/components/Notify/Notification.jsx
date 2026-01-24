@@ -9,6 +9,8 @@ const AlertUser = ({ message, type = "success", duration = 5000 }) => {
     const [autoHideDuration, setautoHideDuration] = useState(5000)
 
     useEffect(() => {
+        console.log(message)
+
         setOpen(true)
         setautoHideDuration(duration)
     }, [autoHideDuration]);

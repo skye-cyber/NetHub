@@ -1,6 +1,5 @@
 import uuid
 from django.utils import timezone
-from django.contrib.auth.models import User
 from django.db import models
 
 
@@ -76,7 +75,7 @@ class PaymentTransaction(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
+    user = models.ForeignKey("users.NetHubUser", on_delete=models.CASCADE, related_name='payments')
     plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE, related_name='transactions')
 
     # Payment Details
@@ -132,7 +131,7 @@ class InternetAccess(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='internet_access')
+    user = models.ForeignKey("users.NetHubUser", on_delete=models.CASCADE, related_name='internet_access')
     payment = models.OneToOneField(PaymentTransaction, on_delete=models.CASCADE, related_name='access')
     plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE, related_name='active_access')
 

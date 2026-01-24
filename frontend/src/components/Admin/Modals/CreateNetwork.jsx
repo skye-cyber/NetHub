@@ -62,25 +62,61 @@ export const CreateNetworkModal = ({ newNetwork, setNewNetwork, handleCreateNetw
                     </div>
                 </div>
 
-                {newNetwork.security !== 'open' && (
-                    <div className='relative'>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Password</label>
+                <section className="flex gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Network Interface</label>
                         <input
-                            type={`${passwordVisible ? 'text' : 'password'}`}
-                            required
-                            value={newNetwork.password}
-                            onChange={(e) => setNewNetwork({ ...newNetwork, password: e.target.value })}
+                            type="text"
+                            value={newNetwork.vinterface}
+                            onChange={(e) => setNewNetwork({ ...newNetwork, vinterface: e.target.value })}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
-                            placeholder="Network password"
+                            placeholder="wlan0"
                         />
-                        <EyeIcon
-                            onClick={() => setPasswordVisible(true)}
-                            className={`${passwordVisible ? 'hidden' : 'block'} absolute h-4 w-4 right-2 top-10 text-gray-800 dark:stroke-gray-100 cursor-pointer`} />
-                        <EyeSlashIcon
-                            onClick={() => setPasswordVisible(false)}
-                            className={`${passwordVisible ? 'block' : 'hidden'} absolute h-4 w-4 right-2 top-10 text-gray-800 dark:stroke-gray-100 cursor-pointer`} />
                     </div>
-                )}
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Max Clients</label>
+                        <input
+                            type="text"
+                            value={newNetwork.max_clients}
+                            onChange={(e) => setNewNetwork({ ...newNetwork, max_clients: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
+                            placeholder="50"
+                        />
+                    </div>
+                </section>
+
+                <section className="flex gap-4">
+                    {newNetwork.security !== 'open' && (
+                        <div className='relative'>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Password</label>
+                            <input
+                                type={`${passwordVisible ? 'text' : 'password'}`}
+                                required
+                                value={newNetwork.password}
+                                onChange={(e) => setNewNetwork({ ...newNetwork, password: e.target.value })}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
+                                placeholder="Network password"
+                            />
+                            <EyeIcon
+                                onClick={() => setPasswordVisible(true)}
+                                className={`${passwordVisible ? 'hidden' : 'block'} absolute h-4 w-4 right-2 top-10 text-gray-800 dark:stroke-gray-100 cursor-pointer`} />
+                            <EyeSlashIcon
+                                onClick={() => setPasswordVisible(false)}
+                                className={`${passwordVisible ? 'block' : 'hidden'} absolute h-4 w-4 right-2 top-10 text-gray-800 dark:stroke-gray-100 cursor-pointer`} />
+                        </div>
+                    )}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subnet</label>
+                        <input
+                            type="text"
+                            value={newNetwork.subnet}
+                            onChange={(e) => setNewNetwork({ ...newNetwork, subnet: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
+                            placeholder="192.168.12.0/24"
+                        />
+                    </div>
+                </section>
 
                 <div className="flex justify-end space-x-3 pt-4">
                     <button

@@ -14,6 +14,10 @@ import DevicePage from './pages/DevicesPage'
 import DiscoverPage from './pages/DiscoverPage';
 import SettingsPage from './pages/SettingsPage';
 import PaymentPage from './pages/Payments';
+import './components/Portals/PortalTargetRegister';
+import { StaticPortalContainer } from './components/Portals/StaticPortalContainer';
+import FriendlyErrorBoundary from './components/ErrorHandler/FriendlyErrorBoundary';
+import { SleakToast } from './components/Toasts/ToastUI';
 
 const theme = createTheme({
     palette: {
@@ -29,7 +33,9 @@ const theme = createTheme({
 const App = () => {
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-            <MainLayout>
+            <MainLayout
+                id="global"
+                data-portal-container="global">
                 <ThemeProvider theme={theme}>
                     <CssBaseline />
                     <ConnectionStatus />
@@ -47,6 +53,10 @@ const App = () => {
                             <Route path="/payment" element={<PaymentPage />} />
                         </Routes>
                     </Router>
+                    <FriendlyErrorBoundary>
+                        <StaticPortalContainer />
+                    </FriendlyErrorBoundary>
+                    <SleakToast />
                 </ThemeProvider>
             </MainLayout>
         </div>

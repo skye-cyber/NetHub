@@ -74,7 +74,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "NetHub.wsgi.application"
 
-# AUTH_USER_MODEL = "users.CustomUser"
+AUTH_USER_MODEL = "users.NetHubUser"
 
 # Authentication backends
 AUTHENTICATION_BACKENDS = [
@@ -111,6 +111,8 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/

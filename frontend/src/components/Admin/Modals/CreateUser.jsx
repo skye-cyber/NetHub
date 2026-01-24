@@ -1,6 +1,6 @@
-import { XMarkIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon, EyeIcon, EyeSlashIcon, } from "@heroicons/react/24/outline";
 
-export const CreateUserModal = ({ newUser, setNewUser, handleCreateUser, loading, networks }) => (
+export const CreateUserModal = ({ newUser, setNewUser, handleCreateUser, loading, networks, passwordVisible, setPasswordVisible }) => (
     <dialog id="create_user_modal" className="modal rounded-xl">
         <div className="modal-box bg-white dark:bg-primary-800 border border-gray-200 dark:border-gray-700 w-[400px] max-w-lg rounded-xl p-4">
             <div className="flex justify-between items-center mb-6">
@@ -11,6 +11,17 @@ export const CreateUserModal = ({ newUser, setNewUser, handleCreateUser, loading
             </div>
             <form onSubmit={handleCreateUser} className="space-y-4">
                 <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 select-none">Username</label>
+                    <input
+                        type="text"
+                        required
+                        value={newUser.username}
+                        onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
+                        placeholder="luna187"
+                    />
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 select-none">Email Address</label>
                     <input
                         type="email"
@@ -20,6 +31,24 @@ export const CreateUserModal = ({ newUser, setNewUser, handleCreateUser, loading
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
                         placeholder="user@example.com"
                     />
+                </div>
+
+                <div className='relative'>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Password</label>
+                    <input
+                        type={`${passwordVisible ? 'text' : 'password'}`}
+                        required
+                        value={newUser.password}
+                        onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
+                        placeholder="Network password"
+                    />
+                    <EyeIcon
+                        onClick={() => setPasswordVisible(true)}
+                        className={`${passwordVisible ? 'hidden' : 'block'} absolute h-4 w-4 right-2 top-10 text-gray-800 dark:stroke-gray-100 cursor-pointer`} />
+                    <EyeSlashIcon
+                        onClick={() => setPasswordVisible(false)}
+                        className={`${passwordVisible ? 'block' : 'hidden'} absolute h-4 w-4 right-2 top-10 text-gray-800 dark:stroke-gray-100 cursor-pointer`} />
                 </div>
 
                 <div>

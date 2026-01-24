@@ -1,50 +1,95 @@
 from django.contrib import admin
-from .models import CustomUser, UserProfile
 from django.contrib.auth.admin import UserAdmin
+from .models import NetHubUser
 
 
-@admin.register(CustomUser)
+@admin.register(NetHubUser)
 class CustomUserAdmin(UserAdmin):
-    list_display = ("username", "email", "is_online", "last_seen", "is_staff")
-    list_filter = ("is_online", "is_staff", "is_superuser", "created_at")
-    search_fields = ("username", "email", "first_name", "last_name")
-    readonly_fields = ("last_seen", "created_at", "updated_at")
-
-    fieldsets = UserAdmin.fieldsets + (
-        (
-            "User Features",
-            {
-                "fields": (
-                    "is_online",
-                    "last_seen",
-                    "avatar",
-                    "bio",
-                    "color_scheme",
-                )
-            },
-        ),
-        ("Timestamps", {"fields": ("created_at", "updated_at")}),
+    list_display = (
+        "username",
+        "email",
+        "is_online",
+        "last_seen",
+        "is_staff",
+        "role",
+        "status"
+    )
+    list_filter = (
+        "is_online",
+        "is_staff",
+        "is_superuser",
+        "created_at",
+        "role",
+        "status"
+    )
+    search_fields = (
+        "username",
+        "email",
+        "first_name",
+        "last_name",
+        "phone",
+        "department"
+    )
+    readonly_fields = (
+        "last_seen",
+        "created_at",
+        "updated_at",
+        "last_login"
     )
 
-    def get_role(self, obj):
-        return obj.profile.role if hasattr(obj, 'profile') else 'No Profile'
-    get_role.short_description = 'Role'
+    fieldsets = (
+        (None, {'fields': ('username', 'password')}),
+        ('Personal info', {
+            'fields': (
+                'first_name',
+                'last_name',
+                'email',
+                'avatar',
+                'bio',
+                'phone',
+                'department'
+            )
+        }),
+        ('Permissions', {
+            'fields': (
+                'is_active',
+                'is_staff',
+                'is_superuser',
+                'is_online',
+                'role',
+                'status',
+                'groups',
+                'user_permissions'
+            )
+        }),
+        ('Important dates', {
+            'fields': (
+                'last_login',
+                'last_seen',
+                'created_at',
+                'updated_at'
+            )
+        }),
+        ('Preferences', {
+            'fields': ('color_scheme',)
+        }),
+        ('Networks', {
+            'fields': ('networks',),
+            'classes': ('collapse',)
+        }),
+    )
 
+    filter_horizontal = ('networks', 'groups', 'user_permissions')
 
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user_email', 'role', 'status', 'last_login', 'created_at']
-    list_filter = ['role', 'status', 'created_at']
-    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'department']
-    readonly_fields = ['created_at', 'last_login']
-    filter_horizontal = ['networks']
+    def get_fieldsets(self, request, obj=None):
+        if not obj:
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
 
-    def user_email(self, obj):
-        return obj.user.email
-    user_email.short_description = 'Email'
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('profile_user')
 
-
-class UserProfileInline(admin.StackedInline):
-    model = UserProfile
-    can_delete = False
-    verbose_name_plural = 'Profile'
+    def get_inline_instances(self, request, obj=None):
+        if obj:
+            return list(super().get_inline_instances(request, obj))
+        return []

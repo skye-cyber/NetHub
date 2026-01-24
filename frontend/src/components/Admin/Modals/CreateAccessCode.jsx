@@ -15,13 +15,13 @@ export const CreateAccessCodeModal = ({ newAccessCode, setNewAccessCode, handleG
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Network</label>
                     <select
                         required
-                        value={newAccessCode.network}
+                        value={newAccessCode.network.id}
                         onChange={(e) => setNewAccessCode({ ...newAccessCode, network: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white"
                     >
                         <option value="">Select a network</option>
                         {networks.map(network => (
-                            <option key={network.id} value={network.name}>{network.name}</option>
+                            <option key={network.id} value={network.id}>{network.name}</option>
                         ))}
                     </select>
                 </div>
@@ -33,8 +33,8 @@ export const CreateAccessCodeModal = ({ newAccessCode, setNewAccessCode, handleG
                             type="number"
                             required
                             min="1"
-                            value={newAccessCode.maxUses}
-                            onChange={(e) => setNewAccessCode({ ...newAccessCode, maxUses: parseInt(e.target.value) })}
+                            value={newAccessCode.max_uses}
+                            onChange={(e) => setNewAccessCode({ ...newAccessCode, max_uses: parseInt(e.target.value) })}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
                         />
                     </div>
@@ -43,8 +43,8 @@ export const CreateAccessCodeModal = ({ newAccessCode, setNewAccessCode, handleG
                         <input
                             type="date"
                             required
-                            value={newAccessCode.expires}
-                            onChange={(e) => setNewAccessCode({ ...newAccessCode, expires: e.target.value })}
+                            value={newAccessCode.expires_at}
+                            onChange={(e) => setNewAccessCode({ ...newAccessCode, expires_at: e.target.value })}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600  rounded-lg bg-white dark:bg-primary-700 text-gray-900 dark:text-white dark:placeholder-secondary-50 outline-none focus:ring dark:focus:ring-primary-100 focus:ring-none selection:bg-emerald-400/50 dark:selection:bg-emerald-600"
                         />
                     </div>

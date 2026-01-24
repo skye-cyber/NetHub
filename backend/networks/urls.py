@@ -5,6 +5,7 @@ app_name = 'networks'
 
 urlpatterns = [
     # Network management
-    path('api/networks/', views.NetworkAPIView.as_view(), name='networks'),
+    path('api/networks', views.NetworkAPIView.as_view(), name='networks'),
+    path('api/networks/delete/<str:id>', views.NetworkAPIView.as_view(), name='delete_network'),
     path("api/connect", views.connect, name="connect"),
 ]

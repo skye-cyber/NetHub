@@ -1,16 +1,15 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
-from django.contrib.auth import get_user_model
-
-_User = get_user_model()
 
 
-class CustomUser(User):
+class NetHubUser(AbstractUser):
     """
-    Custom user model extending Django's AbstractUser.
+    Custom user model combining both user and profile information.
+    Extends Django's AbstractUser for authentication functionality.
     """
 
+    # Basic user fields (from CustomUser)
     is_online = models.BooleanField(default=False)
     last_seen = models.DateTimeField(default=timezone.now)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
@@ -31,8 +30,35 @@ class CustomUser(User):
         ],
     )
 
+    # Profile fields (from UserProfile)
+    role = models.CharField(
+        max_length=20,
+        choices=[
+            ('administrator', 'Administrator'),
+            ('technician', 'Technician'),
+            ('viewer', 'Viewer'),
+        ],
+        default='viewer'
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('active', 'Active'),
+            ('inactive', 'Inactive'),
+            ('suspended', 'Suspended'),
+        ],
+        default='active'
+    )
+
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    department = models.CharField(max_length=100, blank=True, null=True)
+    networks = models.ManyToManyField('networks.Network', related_name='authorized_users', blank=True)
+
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    last_login = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = "users"
@@ -63,43 +89,19 @@ class CustomUser(User):
     def is_admin(self):
         return self.is_superuser
 
-    def _serialize_custom_user(self, instance):
+    def _serialize_custom_user(self):
         """Optimized custom user serialization"""
         return {
-            "user_id": str(instance.id),
-            "username": instance.username,
-            "email": instance.email,
-            "is_online": instance.is_online,
-            "last_seen": instance.last_seen.isoformat() if instance.last_seen else None,
-            "avatar": str(instance.avatar) if instance.avatar else None,
-            "bio": instance.bio or "",
+            "user_id": str(self.id),
+            "username": self.username,
+            "email": self.email,
+            "is_online": self.is_online,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "avatar": str(self.avatar) if self.avatar else None,
+            "bio": self.bio or "",
+            "role": self.role,
+            "status": self.status,
+            "phone": self.phone,
+            "department": self.department,
+            "networks": list(self.networks.values_list('id', flat=True)),
         }
-
-
-class UserProfile(models.Model):
-    ROLE_CHOICES = [
-        ('administrator', 'Administrator'),
-        ('technician', 'Technician'),
-        ('viewer', 'Viewer'),
-    ]
-
-    STATUS_CHOICES = [
-        ('active', 'Active'),
-        ('inactive', 'Inactive'),
-        ('suspended', 'Suspended'),
-    ]
-
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='user_profile')
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='viewer')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    networks = models.ManyToManyField('networks.Network', related_name='authorized_users', blank=True)
-    phone = models.CharField(max_length=20, blank=True, null=True)
-    department = models.CharField(max_length=100, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_login = models.DateTimeField(blank=True, null=True)
-
-    class Meta:
-        db_table = 'user_profiles'
-
-    def __str__(self):
-        return f"{self.user.email} ({self.role})"

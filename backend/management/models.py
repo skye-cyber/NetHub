@@ -1,7 +1,9 @@
 from django.utils import timezone
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 import uuid
+
+User = get_user_model()
 
 
 class SystemSettings(models.Model):
@@ -123,7 +125,7 @@ class AccessCode(models.Model):
     network = models.ForeignKey('networks.Network', on_delete=models.CASCADE, related_name='access_codes')
     max_uses = models.IntegerField(default=10)
     uses = models.IntegerField(default=0)
-    expires_at = models.DateTimeField()
+    expires_at = models.DateTimeField(null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     description = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)

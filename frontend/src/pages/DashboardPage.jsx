@@ -108,8 +108,8 @@ const DashboardPage = () => {
                         <div className="flex items-center space-x-2 sm:space-x-4">
 
                             <div>
-                                <h4 className="sm:text-xl font-semibold text-gray-900 dark:text-white">
-                                    Connected <span className='hidden sm:flex'>& Secure</span>
+                                <h4 className="flex sm:text-xl font-semibold text-gray-900 dark:text-white">
+                                    Connected <span className='hidden sm:flex'>&nbsp; & &nbsp;Secure</span>
                                 </h4>
                                 <p className="text-gray-600 dark:text-gray-300 text-sm">
                                     Your connection is secure

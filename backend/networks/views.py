@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from .models import Network
@@ -36,6 +37,8 @@ class NetworkAPIView(BaseAPIView):
                 })
             return self.json_response({'networks': data})
         except Exception as e:
+            raise
+            print(e)
             return self.error_response(str(e), 500)
 
     def post(self, request):
@@ -45,33 +48,56 @@ class NetworkAPIView(BaseAPIView):
             return self.error_response('Invalid JSON')
 
         try:
-            network = Network.objects.create(
-                name=data.get('name'),
-                interface=data.get('interface', 'xap0'),
-                ssid=data.get('ssid'),
-                security=data.get('security', 'wpa2'),
-                password=data.get('password'),
-                band=data.get('band', 'dual'),
-                vlan_id=data.get('vlan_id'),
-                max_clients=data.get('max_clients', 50),
-                status=data.get('status', 'active')
-            )
-            subnet = data.get('subnet', None)
-            if subnet:
-                network.subnet = subnet
+            with transaction.atomic():
+                network = Network.objects.create(
+                    name=data.get('name'),
+                    interface=data.get('vinterface', 'xap0'),
+                    ssid=data.get('ssid'),
+                    security=data.get('security', 'wpa2'),
+                    password=data.get('password'),
+                    band=data.get('band', 'dual'),
+                    vlan_id=data.get('vlan_id'),
+                    max_clients=data.get('max_clients', 50),
+                    status=data.get('status', 'active')
+                )
+                subnet = data.get('subnet', None)
+                if subnet:
+                    network.subnet = subnet
 
-            # Create Network
-            return self.json_response({
-                'message': 'Network created successfully',
-                'network': {
-                    'id': str(network.id),
-                    'name': network.name,
-                    'ssid': network.ssid,
-                    'interface': network.interface,
-                    'status': network.status
-                }
-            }, 201)
+                # Create Network
+                return self.json_response({
+                    'message': 'Network created successfully',
+                    'network': {
+                        'id': str(network.id),
+                        'name': network.name,
+                        'ssid': network.ssid,
+                        'interface': network.interface,
+                        'status': network.status,
+                        'max_clients': network.max_clients,
+                        'security': network.security,
+                        'band': network.band,
+                        'clients': network.connected_clients_count,
+                    }
+                }, 201)
         except Exception as e:
+            return self.error_response(str(e), 400)
+
+    def delete(self, request, id):
+        try:
+            with transaction.atomic():
+                if Network.objects.filter(id=id).exists():
+                    Network.objects.get(id=id).delete()
+                    return self.json_response({
+                        'message': 'Network deleted successfully',
+                        'success': True
+                    }, 200)
+                return self.json_response({
+                    'message': 'Network not found',
+                    'success': True
+                }, 202)
+        except Exception as e:
+            raise
+            print(e)
             return self.error_response(str(e), 400)
 
 

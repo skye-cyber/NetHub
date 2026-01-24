@@ -1,6 +1,5 @@
 from django.db import models
 import uuid
-from django.contrib.auth.models import User
 
 
 class Network(models.Model):
@@ -46,7 +45,7 @@ class Network(models.Model):
 
     @property
     def connected_clients_count(self):
-        return self.connected_devices.filter(authenticated=True).count()
+        return self.connected_devices.filter(is_authenticated=True).count()
 
 
 class NetworkReport(models.Model):
@@ -61,7 +60,7 @@ class NetworkReport(models.Model):
     report_type = models.CharField(max_length=20, choices=REPORT_TYPE_CHOICES)
     title = models.CharField(max_length=200)
     network = models.ForeignKey(Network, on_delete=models.CASCADE, related_name='reports')
-    generated_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    generated_by = models.ForeignKey("users.NetHubUser", on_delete=models.CASCADE)
     period_start = models.DateTimeField()
     period_end = models.DateTimeField()
     data = models.JSONField()
