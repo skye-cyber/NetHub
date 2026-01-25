@@ -11,7 +11,6 @@ import aiohttp
 import websockets
 import threading
 from typing import Dict, Any, Optional, Callable
-from urllib.parse import urljoin
 import ssl
 import certifi
 
