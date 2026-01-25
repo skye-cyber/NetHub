@@ -152,11 +152,13 @@ def hotspot_start(ctx, wifi_iface, internet_iface, ssid, password, channel,
             progress.update(task, completed=100)
 
             if success:
+                from ap_utils.config import config_manager
+                config = config_manager.get_config
                 console.print(Panel.fit(
                     "[bold green]✓ Hotspot started successfully![/bold green]\n\n"
-                    f"[cyan]SSID:[/cyan] {ssid or 'From config'}\n"
-                    f"[cyan]Interface:[/cyan] {wifi_iface}\n"
-                    f"[cyan]Sharing:[/cyan] {share_method} via {internet_iface}",
+                    f"[cyan]SSID:[/cyan] {config['ssid'] or 'From config'}\n"
+                    f"[cyan]Interface:[/cyan] {config['internet_iface']}\n"
+                    f"[cyan]Sharing:[/cyan] {config['share_method']} via {config['internet_iface']}",
                     title="Hotspot Status"
                 ))
             else:

@@ -1,7 +1,7 @@
 {
   "ssid": "nethub@ap1",
   "wpa_version": 2,
-  "password": 12345678,
+  "password": "",
   "mode": "nmcli",
   "channel": 6,
   "ip_range": "192.168.100.0/24",
@@ -11,7 +11,7 @@
   "bridge_iface": "xbr0",
   "dns_port": 5353,
   "share_method": "nat",
-  "internet_iface": "wlan0",
+  "internet_iface": "eth0",
   "psk": "fbbf8dbb-6fc4-415d-a114-ddc587bd95f2-a2913680-c959-11f0-8000-525",
   "use_psk": false,
   "ht_capab": "HT40+",

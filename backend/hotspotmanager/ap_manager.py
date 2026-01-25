@@ -97,7 +97,6 @@ class ApManager:
     def setup_accesspoint(self):
         """Initialize the access point with proper configuration."""
         try:
-            print()
             # Use the new interface manager to initialize the access point
             self.interface_manager.initialize_access_point()
 
@@ -118,6 +117,7 @@ class ApManager:
             # Exit cleanly
             print("Success")
             # self.clean.clean_exit("Success")
+            return True
 
         except Exception as e:
             self.clean.die(f"Initialization failed: {str(e)}")

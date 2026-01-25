@@ -240,7 +240,7 @@ class InterfaceManager:
                 print("Creating a virtual WiFi interface... ", end='')
                 # Actually create the virtual interface using iw command
                 command.run(
-                    ['iw', 'dev', self.config['internet_iface'], 'interface', 'add',
+                    ['iw', 'dev', self.config['wifi_iface'], 'interface', 'add',
                         self.config['vwifi_iface'], 'type', '__ap'],
                     check=True, capture_output=True, text=True, force_return=True
                 )

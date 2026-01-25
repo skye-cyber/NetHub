@@ -6,9 +6,11 @@ import os
 import time
 import queue
 import threading
+import socket
 import subprocess
 from typing import Dict
 from datetime import datetime
+from collections import defaultdict
 
 # Rich for TUI
 from rich.console import Console
@@ -26,7 +28,7 @@ from .netmonitor import NetworkScanner
 from .datasources import DataSource, FileDataSource, APIDataSource
 from .datasources import HAS_REQUESTS
 from .writer import writer
-
+from .keyboard import KeyboardHandler
 
 # ==================== TUI Components ====================
 
@@ -38,10 +40,18 @@ class DeviceMonitorTUI:
         self.scanner = scanner
         self.console = Console()
         self.devices: Dict[str, Device] = {}
+        self.devices_lock = threading.Lock()
         self.running = True
         self.last_scan = datetime.now()
         self.interface_stats = {}
+        self.interface_stats_lock = threading.Lock()
         self.event_queue = queue.Queue()
+
+        self.keyboard_handler = KeyboardHandler(self)
+
+        self.selected_index = 0
+        self.devices_list = []  # Cache for selection
+        # self.input_thread = threading.Thread(target=self._input_loop, daemon=True)
 
         # Start background threads
         self.scan_thread = threading.Thread(target=self._scan_loop, daemon=True)
@@ -52,15 +62,33 @@ class DeviceMonitorTUI:
         """Start monitoring"""
         self.scan_thread.start()
         self.ui_thread.start()
+        # self.input_thread.start()  # Start input thread
+        self.keyboard_handler.start()
+
+        last_scan_time = 0
+        last_layout_time = 0
 
         try:
             with Live(self._generate_layout(), refresh_per_second=4, screen=True) as live:
                 while self.running:
                     try:
-                        # Update UI
-                        live.update(self._generate_layout())
+                        current_time = time.time()
 
-                        # Check for user input
+                        # Force layout refresh every 0.5 seconds
+                        if current_time - last_layout_time > 0.5:
+                            live.update(self._generate_layout())
+                            last_layout_time = current_time
+
+                        # Perform scan at interval
+                        if current_time - last_scan_time > Config.SCAN_INTERVAL:
+                            self._perform_scan()
+                            last_scan_time = current_time
+                            live.update(self._generate_layout())  # Immediate update after scan
+
+                        # Update UI
+                        # live.update(self._generate_layout())
+
+                        # Small sleep to prevent CPU overload
                         time.sleep(0.25)
 
                     except KeyboardInterrupt:
@@ -93,7 +121,7 @@ class DeviceMonitorTUI:
                 time.sleep(1)
 
     def _perform_scan(self):
-        """Perform network scan and update devices"""
+        """Perform network scan and update devices - FIXED"""
         # Get authenticated MACs
         auth_macs = set(self.data_source.get_authenticated_macs())
 
@@ -101,34 +129,38 @@ class DeviceMonitorTUI:
         devices_data = self.scanner.scan_arp()
         writer.write(f"DATA: \n{devices_data}")
 
-        # Update devices
-        current_macs = set()
-        for ip, mac, state in devices_data:
-            current_macs.add(mac)
+        # Update devices with thread lock
+        with self.devices_lock:
+            current_macs = set()
 
-            if mac in self.devices:
+            for ip, mac, state in devices_data:
+                current_macs.add(mac)
+
+                if mac in self.devices:
+                    device = self.devices[mac]
+                    device.ip = ip  # Update IP
+                    device.update()
+                else:
+                    device = Device(ip, mac, mac in auth_macs, state)
+                    device.hostname = self.scanner.get_hostname(ip)
+                    device.vendor = self.scanner.get_vendor(mac)
+                    self.devices[mac] = device
+
+            # Remove stale devices (not seen in current scan)
+            stale_macs = set(self.devices.keys()) - current_macs
+            for mac in stale_macs:
+                # Keep for a while in case of intermittent connections
                 device = self.devices[mac]
-                device.update()
-            else:
-                device = Device(ip, mac, mac in auth_macs, state)
-                device.hostname = self.scanner.get_hostname(ip)
-                device.vendor = self.scanner.get_vendor(mac)
-                self.devices[mac] = device
+                if (datetime.now() - device.last_seen).seconds > 300:  # 5 minutes
+                    del self.devices[mac]
+                else:
+                    # Mark as stale but keep
+                    device.ip = "[stale]"
 
-            # Update IP if changed
-            if self.devices[mac].ip != ip:
-                self.devices[mac].ip = ip
-
-        # Remove stale devices (not seen in current scan)
-        stale_macs = set(self.devices.keys()) - current_macs
-        for mac in stale_macs:
-            # Keep for a while in case of intermittent connections
-            if (datetime.now() - self.devices[mac].last_seen).seconds > 300:  # 5 minutes
-                del self.devices[mac]
-
-        # Update interface stats
-        self.interface_stats = self.scanner.get_interface_stats()
-        self.last_scan = datetime.now()
+        # Update interface stats with thread lock
+        with self.interface_stats_lock:
+            self.interface_stats = self.scanner.get_interface_stats()
+            self.last_scan = datetime.now()
         writer.write(f"Devices UPD:\n{self.devices}")
 
     def _generate_layout(self) -> Layout:
@@ -155,12 +187,12 @@ class DeviceMonitorTUI:
 
         # Main content (split into left and right)
         layout["main"].split_row(
-            Layout(name="devices", ratio=3),
-            Layout(name="stats", ratio=2)
+            Layout(name="devices", ratio=4),  # 4 parts out of 6 = ~67%
+            Layout(name="stats", ratio=2)  # 2 parts out of 6 = ~33%
         )
 
         # Devices table
-        devices_table = self._generate_devices_table()
+        devices_table = self._generate_devices_table_with_selection()
         layout["devices"].update(
             Panel(
                 devices_table,
@@ -200,6 +232,102 @@ class DeviceMonitorTUI:
 
         return layout
 
+    def _generate_devices_table_with_selection(self) -> Table:
+        """Generate devices table - clean version with text-only selection"""
+        table = Table(
+            show_header=True,
+            header_style="bold magenta",
+            box=box.ROUNDED,
+            expand=True
+        )
+
+        table.add_column("IP", style="cyan", width=19)
+        table.add_column("MAC", style="#0055ff", width=20)
+        table.add_column("Status", width=12)
+        table.add_column("State", style="#ffff7f", width=12)
+        table.add_column("Hostname", style="green", width=20)
+        table.add_column("Vendor", style="yellow", width=20)
+        table.add_column("Seen", style="dim white", width=9)
+
+        with self.devices_lock:
+            devices_copy = list(self.devices.values())
+
+        # Sort devices
+        def ip_sort_key(device):
+            try:
+                ip_part = device.ip
+                if '[' in ip_part:
+                    import re
+                    ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', ip_part)
+                    if ip_match:
+                        ip_part = ip_match.group(1)
+                return tuple(map(int, ip_part.split('.')))
+            except Exception:
+                return (255, 255, 255, 255)
+
+        sorted_devices = sorted(devices_copy, key=ip_sort_key)
+
+        for idx, device in enumerate(sorted_devices, 1):
+            is_selected = (idx - 1) == self.selected_index
+
+            # Get device info
+            state = device.state
+            hostname = device.hostname or "Unknown"
+
+            if not device.hostname or device.hostname == "Unknown":
+                device.hostname = self.scanner.get_hostname(device.ip)
+                hostname = device.hostname or "Unknown"
+
+            vendor = device.vendor or "Unknown"
+            if len(vendor) > 22:
+                vendor = vendor[:19] + "..."
+
+            seen_secs = (datetime.now() - device.last_seen).seconds
+            if seen_secs < 60:
+                seen = f"{seen_secs}s"
+            elif seen_secs < 3600:
+                seen = f"{seen_secs // 60}m"
+            else:
+                seen = f"{seen_secs // 3600}h"
+
+            cursor = ""
+            if is_selected:
+                # Selected row - just use brighter/different text color
+                # highlight_color = "cyan"
+                cursor = "▶"
+
+            '''
+                # All text in highlight color (status loses its green/red)
+                status_text = "✓ AUTH" if device.authenticated else "✗ BLOCKED"
+
+                table.add_row(
+                    f"{cursor}[{highlight_color}]{device.ip}[/]",
+                    f"[{highlight_color}]{device.mac}[/]",
+                    f"[{highlight_color}]{status_text}[/]",
+                    f"[{highlight_color}]{state}[/]",
+                    f"[{highlight_color}]{hostname}[/]",
+                    f"[{highlight_color}]{vendor}[/]",
+                    f"[{highlight_color}]{seen}[/]"
+                )
+            else:
+            '''
+            if device.authenticated:
+                status_display = "[green]✓ AUTH[/green]"
+            else:
+                status_display = "[red]✗ BLOCKED[/red]"
+
+            table.add_row(
+                f"{cursor}{device.ip}",
+                device.mac,
+                status_display,
+                state,
+                hostname,
+                vendor,
+                seen
+            )
+
+        return table
+
     def _generate_devices_table(self) -> Table:
         """Generate devices table"""
         table = Table(
@@ -217,10 +345,13 @@ class DeviceMonitorTUI:
         table.add_column("Vendor", style="yellow", width=20)
         table.add_column("Seen", style="dim white", width=9)
 
-        # Sort devices by IP
-        sorted_devices = sorted(self.devices.values(), key=lambda d: d.ip)
+        with self.devices_lock:
+            devices_copy = list(self.devices.values())
 
-        for device in sorted_devices:
+        # Sort devices by IP
+        sorted_devices = sorted(devices_copy, key=lambda d: socket.inet_aton(d.ip.split('/')[0]) if d.ip.replace('.', '').isdigit() else '255.255.255.255')
+
+        for idx, device in enumerate(sorted_devices, 1):
             # Status with color
             if device.authenticated:
                 status = "[green]✓ AUTH[/green]"
@@ -230,6 +361,9 @@ class DeviceMonitorTUI:
             state = device.state
 
             # Hostname
+            if not device.hostname or device.hostname == "Unknown":
+                device.hostname = self.scanner.get_hostname(device.ip)
+
             hostname = device.hostname or "Unknown"
 
             # Vendor (truncate if too long)
@@ -246,8 +380,13 @@ class DeviceMonitorTUI:
             else:
                 seen = f"{seen_secs // 3600}h"
 
+            # Highlight stale devices
+            ip_display = device.ip
+            if "[stale]" in device.ip:
+                ip_display = f"[dim]{device.ip}[/dim]"
+
             table.add_row(
-                device.ip,
+                ip_display,  # device.ip,
                 device.mac,
                 status,
                 state,
