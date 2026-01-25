@@ -28,7 +28,7 @@ from .netmonitor import NetworkScanner
 from .datasources import DataSource, FileDataSource, APIDataSource
 from .datasources import HAS_REQUESTS
 from .writer import writer
-from .keyboard import KeyboardHandler
+from .keyboard_handler import SimpleKeyboardHandler
 
 # ==================== TUI Components ====================
 
@@ -47,7 +47,7 @@ class DeviceMonitorTUI:
         self.interface_stats_lock = threading.Lock()
         self.event_queue = queue.Queue()
 
-        self.keyboard_handler = KeyboardHandler(self)
+        self.keyboard_handler = SimpleKeyboardHandler(self)
 
         self.selected_index = 0
         self.devices_list = []  # Cache for selection
