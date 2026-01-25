@@ -105,15 +105,24 @@ class Firewall:
             else:
                 self.update_firewall_allow(cleaned_mac)
 
-    def clean_mac(self, mac: str) -> str:
+    def clean_mac_old(self, mac: str) -> str:
         """Clean and standardize MAC address format"""
         return re.sub(r'[^0-9a-fA-F]', '', mac).lower()
+
+    def clean_mac(self, mac: str) -> str:
+        """Clean and standardize MAC address format"""
+        # Remove all non-hex characters
+        cleaned = re.sub(r'[^0-9a-fA-F]', '', mac).lower()
+        # Format as xx:xx:xx:xx:xx:xx
+        if len(cleaned) == 12:
+            return ':'.join([cleaned[i:i+2] for i in range(0, 12, 2)])
+        return mac
 
     def validate_mac(self, mac: str) -> bool:
         """Validate MAC address format"""
         return bool(re.fullmatch(r'^([0-9a-f]{2}:){5}[0-9a-f]{2}$', mac, re.IGNORECASE))
 
-    def update_firewall_allow(self, mac: str):
+    def update_firewall_allow_old(self, mac: str):
         """Update iptables rules for given MAC address to allow internet access"""
         # Check if MAC rule already exists in CAPTIVE_PORTAL
         if not self.rule_exists(mac):
@@ -130,22 +139,123 @@ class Firewall:
         else:
             print(f"MAC {mac} already has redirect exemption")
 
-    def update_firewall_block(self, mac: str):
-        """Update iptables rules for given MAC address to block internet access"""
-        # Check if MAC rule already exists in CAPTIVE_PORTAL
-        if self.rule_exists(mac):
-            print(f"Removing internet access for MAC: {mac}")
-            subprocess.run(["iptables", "-I", "CAPTIVE_PORTAL", "0", "-m", "mac", "--mac-source", mac, "-j", "DROP"])
-        else:
-            print(f"MAC {mac} already has access")
+    def update_firewall_allow(self, mac: str):
+        """
+        Allow internet access for MAC address
+        - Add ACCEPT rule in CAPTIVE_PORTAL chain
+        - Add RETURN rule in AUTH_REDIRECT chain (bypass redirect)
+        """
+        print(f"🔓 Allowing internet access for MAC: {mac}")
 
-        # Check if MAC rule already exists in AUTH_REDIRECT
-        check_cmd = ["iptables", "-t", "nat", "-C", "AUTH_REDIRECT", "-m", "mac", "--mac-source", mac]
-        if subprocess.run(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-            print(f"Removing redirect exemption for MAC: {mac}")
-            subprocess.run(["iptables", "-t", "nat", "-I", "AUTH_REDIRECT", "1", "-m", "mac", "--mac-source", mac, "-j", "RETURN"])
+        # 1. Remove any existing DROP/block rules for this MAC
+        self._remove_mac_rules(mac)
+
+        # 2. Check if ACCEPT rule already exists in CAPTIVE_PORTAL
+        check_cmd = ["iptables", "-C", "CAPTIVE_PORTAL", "-m", "mac",
+                     "--mac-source", mac, "-j", "ACCEPT"]
+        result = subprocess.run(check_cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            # Add ACCEPT rule at position 1 (after authenticated rules)
+            print("  Adding ACCEPT rule to CAPTIVE_PORTAL chain")
+            subprocess.run([
+                "iptables", "-I", "CAPTIVE_PORTAL", "1",
+                "-m", "mac", "--mac-source", mac,
+                "-j", "ACCEPT"
+            ], check=True)
         else:
-            print(f"MAC {mac} has no redirect exemption")
+            print("  ACCEPT rule already exists in CAPTIVE_PORTAL")
+
+        # 3. Check if RETURN rule already exists in AUTH_REDIRECT
+        check_cmd = ["iptables", "-t", "nat", "-C", "AUTH_REDIRECT",
+                     "-m", "mac", "--mac-source", mac, "-j", "RETURN"]
+        result = subprocess.run(check_cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            # Add RETURN rule at position 1 (before redirect rules)
+            print("  Adding RETURN rule to AUTH_REDIRECT chain")
+            subprocess.run([
+                "iptables", "-t", "nat", "-I", "AUTH_REDIRECT", "1",
+                "-m", "mac", "--mac-source", mac,
+                "-j", "RETURN"
+            ], check=True)
+        else:
+            print("  RETURN rule already exists in AUTH_REDIRECT")
+
+        # 4. Flush connection tracking for immediate effect
+        self.flush_contrac(mac)
+        print(f"  ✓ Internet access enabled for {mac}")
+
+    def update_firewall_block(self, mac: str):
+        """
+        Block internet access for MAC address
+        - Remove ACCEPT/RETURN rules (reverts to default DROP/REDIRECT)
+        """
+        print(f"🔒 Blocking internet access for MAC: {mac}")
+
+        # 1. Remove ACCEPT rule from CAPTIVE_PORTAL if exists
+        self._remove_mac_accept_rule(mac)
+
+        # 2. Remove RETURN rule from AUTH_REDIRECT if exists
+        self._remove_mac_return_rule(mac)
+
+        # 3. Flush connection tracking
+        self.flush_contrac(mac)
+        print(f"  ✓ Internet access blocked for {mac}")
+
+    def _remove_mac_rules(self, mac: str):
+        """Remove all iptables rules for a MAC address"""
+        # Remove from CAPTIVE_PORTAL chain
+        while True:
+            result = subprocess.run([
+                "iptables", "-D", "CAPTIVE_PORTAL",
+                "-m", "mac", "--mac-source", mac,
+                "-j", "ACCEPT"
+            ], capture_output=True, text=True)
+
+            if result.returncode != 0:
+                break
+
+        # Remove from AUTH_REDIRECT chain
+        while True:
+            result = subprocess.run([
+                "iptables", "-t", "nat", "-D", "AUTH_REDIRECT",
+                "-m", "mac", "--mac-source", mac,
+                "-j", "RETURN"
+            ], capture_output=True, text=True)
+
+            if result.returncode != 0:
+                break
+
+    def _remove_mac_accept_rule(self, mac: str) -> bool:
+        """Remove ACCEPT rule from CAPTIVE_PORTAL chain"""
+        check_cmd = ["iptables", "-C", "CAPTIVE_PORTAL",
+                     "-m", "mac", "--mac-source", mac, "-j", "ACCEPT"]
+
+        if subprocess.run(check_cmd, capture_output=True).returncode == 0:
+            print("  Removing ACCEPT rule from CAPTIVE_PORTAL")
+            subprocess.run([
+                "iptables", "-D", "CAPTIVE_PORTAL",
+                "-m", "mac", "--mac-source", mac,
+                "-j", "ACCEPT"
+            ], check=True)
+            return True
+        return False
+
+    def _remove_mac_return_rule(self, mac: str) -> bool:
+        """Remove RETURN rule from AUTH_REDIRECT chain"""
+        check_cmd = ["iptables", "-t", "nat", "-C", "AUTH_REDIRECT",
+                     "-m", "mac", "--mac-source", mac, "-j", "RETURN"]
+
+        if subprocess.run(check_cmd, capture_output=True).returncode == 0:
+            print("  Removing RETURN rule from AUTH_REDIRECT")
+            subprocess.run([
+                "iptables", "-t", "nat", "-D", "AUTH_REDIRECT",
+                "-m", "mac", "--mac-source", mac,
+                "-j", "RETURN"
+            ], check=True)
+            return True
+        return False
 
     def list_from_file(self, file: str) -> List[str]:
         """Read MAC addresses from file"""
@@ -155,23 +265,66 @@ class Firewall:
         except FileNotFoundError:
             return []
 
-    def flush_contrac(self, mac: str) -> bool:
+    def flush_contrac_old(self, mac: str) -> bool:
         """Flush connection tracking for given MAC address"""
         print(f"Flushing connection tracking for MAC: {mac}")
         return subprocess.run(["conntrack", "-D", "-m", mac], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
+    def flush_contrac(self, mac: str) -> bool:
+        """Flush connection tracking for given MAC address"""
+        print(f"  Flushing connection tracking for {mac}")
+        result = subprocess.run(
+            ["conntrack", "-D", "--orig-src", mac],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print(f"    ✓ Connection tracking flushed")
+            return True
+        else:
+            print(f"    ⚠ No connections to flush")
+            return False
+
     def rule_exists(self, mac) -> bool:
         '''Check if MAC rule already exists in CAPTIVE_PORTAL'''
-        check_cmd = ["iptables", "-C", "CAPTIVE_PORTAL", "-m", "mac", "--mac-source", mac]
+        check_cmd = ["iptables", "-C", "CAPTIVE_PORTAL", "-m", "mac", "--mac-source", mac, "-j", "ACCEPT"]
         return subprocess.run(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
+    def get_authenticated_macs(self) -> List[str]:
+        """Get list of authenticated MACs from iptables"""
+        macs = []
+        try:
+            result = subprocess.run(
+                ["iptables", "-L", "CAPTIVE_PORTAL", "-n", "--line-numbers"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            for line in result.stdout.split('\n'):
+                if "MAC" in line and "ACCEPT" in line:
+                    # Extract MAC from line like:
+                    # 1    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            MAC 00:11:22:33:44:55
+                    match = re.search(r'MAC ([0-9a-f:]{17})', line)
+                    if match:
+                        macs.append(match.group(1).lower())
+
+        except Exception as e:
+            print(f"Error getting authenticated MACs: {e}")
+
+        return macs
+
     def authenticate(self, mac: str):
+        """Alias for update_firewall_allow"""
         return self.update_firewall_allow(mac)
 
-    def dauthenticate(self, mac: str):
+    def deauthenticate(self, mac: str):
+        """Alias for update_firewall_block"""
         return self.update_firewall_block(mac)
 
     def auth_status(self, mac: str):
+        """Check if MAC is authenticated (has ACCEPT rule)"""
         return self.rule_exists(mac)
 
 
