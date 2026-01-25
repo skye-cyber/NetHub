@@ -15,7 +15,18 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]  # "localhost", "127.0.0.1", "192.168.12.1", "0.0.0.0"]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS settings for WebSocket
+CORS_ALLOW_ALL_ORIGINS = True  # For development only
+# For production:
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React dev server
+    "http://localhost:40099",  # Your Vite frontend
+    "http://192.168.100.1:40099",  # AP gateway
+]
+
+# Allow WebSocket connections from same-origin
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
+
 
 # Application definition
 
@@ -24,23 +35,28 @@ CAPTIVE_NETWORK = "192.168.12.0/24"
 FRONTEND_BASE_URL = "http://192.168.100.1:40099"
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # Third party
+    "corsheaders",
+    'channels',  # WebSocket support
+    'rest_framework',  # REST API
+
     "portal",
     'util',
     "deviceauth",
     "devices",
     "payments",
-    "corsheaders",
     'users',
-    'management',
+    'manager',
     'networks',
     'hotspotmanager',
-
 ]
 
 MIDDLEWARE = [
@@ -73,6 +89,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "NetHub.wsgi.application"
+ASGI_APPLICATION = "NetHub.asgi.application"
 
 AUTH_USER_MODEL = "users.NetHubUser"
 
@@ -135,3 +152,28 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Channel layers (using Redis for production, InMemory for development)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],  # Redis server
+            "capacity": 1500,  # Default 100
+            "expiry": 10,  # Message expiry in seconds
+        },
+    },
+}
+
+
+'''
+# Or for development only (no Redis required):
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}
+    '''
+
+# daphne /home/skye/NetHub/backend/NetHub.asgi:application --bind 0.0.0.0 --port 8001

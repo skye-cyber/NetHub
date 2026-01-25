@@ -1,0 +1,13 @@
+# /etc/systemd/system/gunicorn.service
+[Unit]
+Description=gunicorn daemon
+After=network.target
+
+[Service]
+User=your_user
+Group=www-data
+WorkingDirectory=/path/to/your/project
+ExecStart=/path/to/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/path/to/your/project.sock NetHub.wsgi:application
+
+[Install]
+WantedBy=multi-user.target

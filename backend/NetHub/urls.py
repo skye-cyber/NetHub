@@ -6,7 +6,7 @@ urlpatterns = [
     path("", include("portal.urls")),
     path("", include("payments.urls")),
     path("", include("users.urls")),
-    path("", include("management.urls")),
+    path("", include("manager.urls")),
     path("", include("networks.urls")),
     path("", include("devices.urls")),
 ]
