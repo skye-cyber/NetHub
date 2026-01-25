@@ -79,14 +79,14 @@ class InterfaceManager:
             # Unlock mutex
             self.lock.mutex_unlock()
 
+            # Create virtual interface first (before setup_interface tries to use it)
+            self.create_virtual_interface()
+
             self.setup_interface()
 
             self.update_configuration()
 
             netservice.configure()
-
-            # Create virtual interface
-            self.create_virtual_interface()
 
             # Start services [hostapd, dnsmasq, dns, internet sharing]
             # netservice.start()
@@ -181,11 +181,12 @@ class InterfaceManager:
                 # else:
                 # self.config['bridge_iface'] = self.alloc_new_iface('xbr')
 
-            # Setup frequency and channel
+            # Setup frequency and channel (check physical interface if using virtual)
             self.setup_frequency_and_channel()
 
-            # Create virtual interface if needed
+            # Handle virtual interface configuration
             if self.config['no_virt']:
+                # When no_virt is set, we use the physical interface as the access point
                 self.config['vwifi_iface'] = self.config['vwifi_iface'] or self.alloc_new_iface('xap')
 
                 # Set virtual interface as unmanaged in NetworkManager if possible
@@ -202,26 +203,29 @@ class InterfaceManager:
 
     def setup_frequency_and_channel(self):
         """Set correct frequency and channel for the WiFi interface"""
-        if self.is_wifi_connected(self.config['vwifi_iface']):
+        # Check if we're using virtual interface or physical interface
+        check_iface = self.config['vwifi_iface'] if self.config.get('no_virt', False) else self.config['wifi_iface']
+        
+        if self.is_wifi_connected(check_iface):
             if not self.config['freq_band']:
-                wifi_iface_freq = self.netmanager._get_interface_freq_(self.config['vwifi_iface'])
+                wifi_iface_freq = self.netmanager._get_interface_freq_(check_iface)
                 wifi_iface_channel = self.ieee80211_frequency_to_channel(wifi_iface_freq)
 
-                print(f"{self.config['vwifi_iface']} is already associated with channel "
+                print(f"{check_iface} is already associated with channel "
                       f"{wifi_iface_channel} ({wifi_iface_freq} MHz)")
 
                 self.config.update({'freq_band': 5}) if self.is_5ghz_frequency(wifi_iface_freq) else self.config.update({'freq_band': 2.4})
 
                 if wifi_iface_channel != wifi_iface_channel:
                     if self._get_channels_() >= 2 and self.can_transmit_to_channel(
-                        self.config['vwifi_iface'], self.config['channel']
+                        check_iface, self.config['channel']
                     ):
                         print("multiple channels supported")
                     else:
                         # Fallback to currently connected channel
                         print(f"multiple channels not supported, fallback to channel: {wifi_iface_channel}")
                         self.config.update({'channel': wifi_iface_channel})
-                        if self.can_transmit_to_channel(self.config['vwifi_iface'], self.config['channel']):
+                        if self.can_transmit_to_channel(check_iface, self.config['channel']):
                             print(f"Transmitting to channel {self.config['channel']}...")
                         else:
                             self.clean.die(
