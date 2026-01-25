@@ -27,6 +27,8 @@ mkdir -p "$BASE_DIR/conf"
 mkdir -p "$BASE_DIR/proc"
 
 # Copy files
+cp -r commsys "$INSTALL_DIR/"
+cp -r cli "$INSTALL_DIR/"
 cp -r captive_portal "$INSTALL_DIR/"
 cp -r ap_utils "$INSTALL_DIR/"
 cp -r core "$INSTALL_DIR/"
@@ -41,14 +43,14 @@ chmod +x "$INSTALL_DIR"/*.sh
 chmod +x "$INSTALL_DIR"/*.py
 
 # Make scripts executable
-chmod +x "$INSTALL_DIR/ap_manager.py"
-chmod +x "$INSTALL_DIR/ap_cli.py"
+chmod +x "$INSTALL_DIR/core/ap_manager.py"
+chmod +x "$INSTALL_DIR/cli/cli.py"
 chmod +x "$INSTALL_DIR/ap_manager.sh"
 chmod +x "$INSTALL_DIR/sudors_edit.sh"
 chmod +x "$INSTALL_DIR/deps.sh"
 
 # Create symlink in /usr/local/bin for easy access
-ln -sf "$INSTALL_DIR/ap_cli.py" /usr/local/bin/ap_manager
+ln -sf "$INSTALL_DIR/cli/cli.py" /usr/local/bin/ap_manager
 
 echo "Setting up sodors ..."
 # "$INSTALL_DIR/sudors_edit.sh" install
