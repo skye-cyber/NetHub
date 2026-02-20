@@ -43,9 +43,9 @@ chmod +x "$INSTALL_DIR"/*.sh
 chmod +x "$INSTALL_DIR"/*.py
 
 # Make scripts executable
-chmod +x "$INSTALL_DIR/core/ap_manager.py"
-chmod +x "$INSTALL_DIR/cli/cli.py"
-chmod +x "$INSTALL_DIR/ap_manager.sh"
+# chmod +x "$INSTALL_DIR/core/ap_manager.py"
+# chmod +x "$INSTALL_DIR/cli/cli.py"
+# chmod +x "$INSTALL_DIR/ap_manager.sh"
 chmod +x "$INSTALL_DIR/sudors_edit.sh"
 chmod +x "$INSTALL_DIR/deps.sh"
 

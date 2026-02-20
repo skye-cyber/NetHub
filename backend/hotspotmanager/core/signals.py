@@ -39,9 +39,12 @@ class SignalHandler:
         if message:
             print(message)
 
-        # Send die signal to the main process if not the main process
-        if os.getpid() != os.getppid():
-            os.kill(os.getppid(), signal.SIGUSR2)
+        '''
+        Send die signal to the main process if not the main process
+        Only when runing in daemon mode eg ap_manager command never existed so not applicable in current implementation
+        '''
+        # if os.getpid() != os.getppid():
+        #     os.kill(os.getppid(), signal.SIGUSR2)
 
         # Restore original signal handlers
         signal.signal(signal.SIGINT, self.original_sigint_handler)

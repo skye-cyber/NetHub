@@ -5,8 +5,8 @@ import subprocess
 
 class LockManager:
     def __init__(self):
-        self.LOCK_FILE = "/tmp/create_ap.all.lock"
-        self.COUNTER_LOCK_FILE = f"/tmp/create_ap.{os.getpid()}.lock"
+        self.LOCK_FILE = "/tmp/ap_manager.all.lock"
+        self.COUNTER_LOCK_FILE = f"/tmp/ap_manager.{os.getpid()}.lock"
         self.lock_fd = None
         self.counter_mutex_fd = None
 

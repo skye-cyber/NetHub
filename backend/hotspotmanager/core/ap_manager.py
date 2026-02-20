@@ -439,6 +439,7 @@ class ApManager:
 
     def stop_accesspoint(self):
         """Stop the hotspot using appropriate network management tools."""
+        self.interface_manager.stop_accesspoint()
         print(f"Stopping {self.config['vwifi_iface']}...")
         return self.clean.clean_exit("Stopping ap manager...")
 

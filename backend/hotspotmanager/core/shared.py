@@ -66,6 +66,7 @@ class Shared:
             result = subprocess.run(['killall', service],
                                     capture_output=True, text=True)
 
+            print(result.stdout)
             if result.stdout and int(result.stdout.split(' ')[0]) and result.returncode == 0:
                 return True
             return False

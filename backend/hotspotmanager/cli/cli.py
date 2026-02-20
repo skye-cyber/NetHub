@@ -5,22 +5,7 @@ AP Manager CLI - Modernized with Click and Rich
 
 import os
 import sys
-import click
-from rich.table import Table
-from rich.panel import Panel
-# from rich import print as rprint
 from rich.console import Console
-
-import initializer
-
-# Local imports
-import auth
-import hotspot
-import firewall
-import monitor
-
-from shared import cli
-
 
 version = "1.0.3"
 
@@ -31,6 +16,13 @@ console = Console()
 
 def entry():
     try:
+        # Local imports
+        import initializer
+        import auth
+        import hotspot
+        import firewall
+        import monitor
+        from shared import cli
         cli()
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled[/yellow]")

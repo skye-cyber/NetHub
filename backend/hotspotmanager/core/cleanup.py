@@ -313,9 +313,9 @@ class CleanupManager(SignalHandler):
 
             self.clean_hostapd()
 
-            # Ctop ap_manager service
-            shared.stop_service('ap_manager')
-            shared.kill_service('hostapd')
+            # Stop ap_manager service -> delegated to interface_manager
+            # shared.stop_service('ap_manager')
+            # shared.kill_service('hostapd') ap_manager service shall terminate the proccess
 
             try:
                 # Clean interfaces
@@ -425,3 +425,4 @@ class CleanupManager(SignalHandler):
     def _is_bridge_interface_(self, iface: str) -> bool:
         """Check if an interface is a bridge interface."""
         return os.path.exists(f"/sys/class/net/{iface}/bridge")
+

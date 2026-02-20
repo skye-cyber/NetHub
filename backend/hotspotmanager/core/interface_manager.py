@@ -86,7 +86,7 @@ class InterfaceManager:
 
             self.update_configuration()
 
-            netservice.configure()
+            # netservice.configure()
 
             # Start services [hostapd, dnsmasq, dns, internet sharing]
             # netservice.start()
@@ -98,31 +98,21 @@ class InterfaceManager:
         except Exception as e:
             self.clean.die(f"AP Initialization failed: {str(e)}")
 
+    def stop_accesspoint(self) -> bool:
+        return shared.stop_service('ap_manger')
+
     def start_apmanager_service(self) -> bool:
         # Make interface unmanaged if needed
         try:
-            self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
+            pass  # self.netmanager.networkmanager_rm_unmanaged(self.config['vwifi_iface'])
         except Exception as e:
             self.clean.die(f"Failed to make interface unmanaged: {str(e)}")
 
         finally:
             try:
-                shared.kill_hostapd()
-                return shared.start_service('ap_manager')
-                """
-                shared.kill_hostapd()
-
-                running = False
-                retries = 0
-                while retries < 5:
-                    running = shared.restart_hostapd()
-                    if running:
-                        break
-                    retries += 1
-                    print(f"Retry {retries}/5\t", end="\r")
-                    time.sleep(1)
-                print("\n")
-                """
+                # shared.kill_hostapd()
+                shared.start_service('dnsmasq', restart=True)
+                return shared.start_service('ap_manager', restart=True)
 
                 # netservice.start_hostapd()
             except Exception as e:

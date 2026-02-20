@@ -20,7 +20,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # For development only
 # For production:
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React dev server
-    "http://localhost:40099",  # Your Vite frontend
+    "http://localhost:40099",  # Vite frontend
     "http://192.168.100.1:40099",  # AP gateway
 ]
 
