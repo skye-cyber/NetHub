@@ -1,0 +1,29 @@
+[Unit]
+Description=Create AP manager Service
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/etc/ap_manager/conf
+# /usr/local/bin/ap_manager hotspot start &&
+ExecStart=/usr/sbin/hostapd -B -P /etc/ap_manager/hostapd.pid /etc/ap_manager/conf/hostapd.conf
+ExecStop=/bin/killall hostapd
+#$(/bin/cat /etc/ap_manager/hostapd.pid)
+# /usr/local/bin/ap_manager hotspot stop
+ExecStartPost=/bin/sleep 2
+# Reload sends SIGHUP
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=10
+Restart=on-failure
+# Don't restart too quickly
+StartLimitInterval=3
+StartLimitBurst=5
+RestartSec=2
+User=root
+SyslogIdentifier=hostapd
+
+[Install]
+WantedBy=multi-user.target
