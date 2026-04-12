@@ -9,8 +9,8 @@
     "build": "vite build",
     "test": "vite test",
     "preview": "vite preview",
-    "tailwind:build": "NODE_ENV=production npx tailwindcss -i ./src/styles/config.css -o ./src/styles/styles.css --minify",
-    "tailwind:watch": "npx tailwindcss -i ./src/styles/config.css -o ./src/styles/styles.css --watch"
+    "dev:styles:build": "NODE_ENV=production npx tailwindcss -i ./src/styles/config.css -o ./src/styles/styles.css --minify",
+    "dev:styles": "npx tailwindcss -i ./src/styles/config.css -o ./src/styles/styles.css --watch"
   },
   "keywords": [],
   "author": {
@@ -60,6 +60,7 @@
     ]
   },
   "devDependencies": {
+    "tailwindcss": "^3.4.19",
     "tailwindcss-pseudo-elements": "^2.0.0"
   }
 }

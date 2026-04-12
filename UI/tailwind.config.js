@@ -3,7 +3,7 @@ import { fontFamily } from 'tailwindcss/defaultTheme'
 
 module.exports = {
     darkMode: 'class', /*'[data-mode="dark"]'],*/
-    content: ['./src/**/*.html', './src/**/*.jsx', './src/**/*.js'],
+    content: ['./src/**/*.html', './src/**/*.jsx', './src/**/*.js', 'src/**/*.tsx'],
     //content: ['loading.html'],
     theme: {
         screens: {
@@ -186,6 +186,12 @@ module.exports = {
             'spin-200': 'spin 2s linear infinite',
             'fadeIn': 'fadeIn 2s cubic-bezier(0.25, 1, 0.5, 1)',
             'blink': 'blink 1.5s infinite ease-in-out',
+            'neo': '0 0 20px -5px rgba(0, 240, 255, 0.3)',
+            'neo-lg': '0 0 30px -5px rgba(0, 240, 255, 0.4)',
+        },
+        animation: {
+            'glow-pulse': 'glow-pulse 3s ease-in-out infinite',
+            'float': 'float 6s ease-in-out infinite',
         },
 
         keyframes: {
@@ -224,6 +230,14 @@ module.exports = {
             '0%': { opacity: 1 },
             '100%': { opacity: 1 },
             '50%': { opacity: 0.5 },
+            'glow-pulse': {
+                '0%, 100%': { boxShadow: '0 0 10px rgba(0, 240, 255, 0.1)' },
+                '50%': { boxShadow: '0 0 25px rgba(0, 240, 255, 0.3)' },
+            },
+            'float': {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-5px)' },
+            },
         },
 
     },
